@@ -1,0 +1,104 @@
+{
+  "tasks": [
+    {
+      "id": "AVT-554",
+      "title": "Настроить локальное окружение",
+      "status": "Done",
+      "priority": "High",
+      "description": "Установить Docker, поднять Postgres, запустить проект локально.",
+      "assignee": "intern_ivan",
+      "type": "Task",
+      "created_at": "2026-11-01"
+    },
+    {
+      "id": "AVT-555",
+      "title": "Починить кнопку оплаты на iOS",
+      "status": "In Progress",
+      "priority": "Blocker",
+      "description": "При нажатии на кнопку вылетает ошибка 500. Проверить логи в payment-service. Скорее всего, проблема в обработке промокода.",
+      "assignee": "intern_ivan",
+      "type": "Bug",
+      "created_at": "2026-11-03"
+    },
+    {
+      "id": "AVT-556",
+      "title": "Добавить логирование в сервис авторизации",
+      "status": "To Do",
+      "priority": "Medium",
+      "description": "Добавить логи при успешном и неуспешном логине. Использовать библиотеку zap.",
+      "assignee": "intern_ivan",
+      "type": "Task",
+      "created_at": "2026-11-05"
+    },
+    {
+      "id": "AVT-557",
+      "title": "Обновить документацию по деплою",
+      "status": "In Review",
+      "priority": "Low",
+      "description": "Дописать в Confluence шаги по откату (rollback) релиза.",
+      "assignee": "intern_ivan",
+      "type": "Documentation",
+      "created_at": "2026-11-06"
+    },
+    {
+      "id": "AVT-558",
+      "title": "Сверстать карточку товара по дизайн-системе",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Использовать компоненты из Figma-библиотеки Авито. Проверить адаптивность на мобильных устройствах.",
+      "assignee": "intern_anna",
+      "type": "Feature",
+      "created_at": "2026-11-02"
+    },
+    {
+      "id": "AVT-559",
+      "title": "Исправить баг с отображением шрифтов в Safari",
+      "status": "To Do",
+      "priority": "Medium",
+      "description": "На iOS устройствах текст в карточке 'Объявление' съезжает. Проблема в CSS-свойстве line-height.",
+      "assignee": "intern_anna",
+      "type": "Bug",
+      "created_at": "2026-11-07"
+    },
+    {
+      "id": "AVT-560",
+      "title": "Настроить кэширование в Redis",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Добавить кэширование для запросов в сервис объявлений. TTL установить 5 минут.",
+      "assignee": "intern_oleg",
+      "type": "Task",
+      "created_at": "2026-11-04"
+    },
+    {
+      "id": "AVT-561",
+      "title": "Написать интеграционные тесты для API",
+      "status": "To Do",
+      "priority": "High",
+      "description": "Покрыть тестами эндпоинты /api/v1/items. Проверить успешные ответы и ошибочные кейсы.",
+      "assignee": "intern_oleg",
+      "type": "Testing",
+      "created_at": "2026-11-08"
+    },
+    {
+      "id": "AVT-562",
+      "title": "Подготовить презентацию к экваторной встрече",
+      "status": "To Do",
+      "priority": "Blocker",
+      "description": "Собрать результаты по закрытым задачам, оформить по шаблону Авито, согласовать с бадди.",
+      "assignee": "intern_ivan",
+      "type": "Documentation",
+      "created_at": "2026-11-09"
+    },
+    {
+      "id": "AVT-563",
+      "title": "Провести код-ревью для стажера",
+      "status": "In Review",
+      "priority": "Medium",
+      "description": "Проверить PR стажера в ветке feature/promo-fix. Оставить комментарии.",
+      "assignee": "intern_anna",
+      "type": "Task",
+      "created_at": "2026-11-09"
+    }
+  ]
+}
