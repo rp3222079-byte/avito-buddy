@@ -9,6 +9,7 @@ import '@fontsource/golos-text/latin-500.css';
 import '@fontsource/golos-text/latin-600.css';
 import '@fontsource/golos-text/latin-700.css';
 import App from './App';
+import ErrorBoundary from './ErrorBoundary';
 import './styles.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>);

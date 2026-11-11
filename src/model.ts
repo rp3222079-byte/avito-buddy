@@ -1,8 +1,18 @@
+import type { ChatReply } from './api';
+
 export type QuestId = 'team' | 'access' | 'guide';
 export type TicketStatus = 'draft' | 'pending' | 'approved';
 export type ArticleId = 'access' | 'team';
 export interface Ticket { id: string; resource: string; reason: string; status: TicketStatus }
-export interface Message { id: number; role: 'buddy' | 'user'; text: string; kind?: 'request' | 'briefing' | 'dashboard'; source?: ArticleId }
+export interface Message {
+  id: number;
+  role: 'buddy' | 'user';
+  text: string;
+  kind?: 'request' | 'briefing' | 'dashboard';
+  source?: ArticleId;
+  sources?: ChatReply['sources'];
+  actions?: ChatReply['actions'];
+}
 export interface DemoState { version: 1; completed: QuestId[]; ticket: Ticket | null; messages: Message[] }
 export const STORAGE_KEY = 'avito-buddy-demo-v1';
 export const quests: { id: QuestId; title: string; short: string; description: string; xp: number }[] = [
@@ -49,6 +59,7 @@ function buddy(state: DemoState, text: string, source?: ArticleId) { return appe
 export type Action =
   | { type: 'user'; text: string }
   | { type: 'reply'; text: string }
+  | { type: 'answer'; message: Omit<Message, 'id' | 'role'> }
   | { type: 'edit'; reason: string; resource: string }
   | { type: 'submit'; fail?: boolean }
   | { type: 'approve' }
@@ -58,6 +69,7 @@ export function reducer(state: DemoState, action: Action): DemoState {
   switch (action.type) {
     case 'reset': return initialState();
     case 'user': return action.text.trim() ? append(state, { role: 'user', text: action.text.trim().slice(0, 500) }) : state;
+    case 'answer': return append(state, { ...action.message, role: 'buddy' });
     case 'reply': {
       const text = action.text.toLowerCase();
       if (/парол|зарплат|чуж|финанс|персональн/.test(text)) return buddy(state, 'Эти сведения недоступны стажёру. Я могу помочь с твоими задачами, инструкциями и заявкой на доступ.');
@@ -69,7 +81,8 @@ export function reducer(state: DemoState, action: Action): DemoState {
         if (state.ticket?.status === 'approved') return buddy(state, 'Доступ уже выдан в демосервисе. Квест завершён, +120 XP! Теперь можно изучить инструкции команды.', 'team');
         if (state.ticket?.status === 'pending') return buddy(state, `Заявка ${state.ticket.id} уже отправлена. Она ожидает согласования — повторная заявка не нужна. Пока можно изучить инструкции.`, 'access');
         if (state.ticket?.status === 'draft') return buddy(state, 'Черновик уже готов — проверь карточку заявки выше. Если нужно, измени описание перед отправкой.', 'access');
-        return append({ ...state, ticket: { id: 'REQ-042', resource: 'Jira', reason: 'Доступ к пространству Backend для первой рабочей задачи', status: 'draft' } },
+        const resource = /confluence|конфлюенс/.test(text) ? 'Confluence' : /figma|фигм/.test(text) ? 'Figma' : 'Jira';
+        return append({ ...state, ticket: { id: 'REQ-042', resource, reason: 'Доступ к пространству Backend для первой рабочей задачи', status: 'draft' } },
           { role: 'buddy', text: 'Подготовил заявку на доступ. Проверь данные — отправлю её только после твоего подтверждения.', source: 'access', kind: 'request' });
       }
       if (/инструк|команд|встреч|настав|анн|ревью/.test(text)) return buddy(state, 'Твой наставник — Анна. Задачи ведём в Jira, изменения обсуждаем на ревью, а вопросы можно принести на 1:1. Собрал самое нужное в инструкции команды.', 'team');
@@ -81,16 +94,21 @@ export function reducer(state: DemoState, action: Action): DemoState {
       if (/экватор|босс/.test(text)) return buddy(state, 'Экватор — встреча о промежуточных результатах стажировки. Собери результаты, подготовь презентацию и проведи репетицию с наставником.');
       return buddy(state, 'В демобазе пока нет ответа на этот вопрос. Обсуди его с наставником Анной на 1:1. Здесь я могу показать запрос доступа, инструкции команды и план первой недели.');
     }
-    case 'edit': return state.ticket?.status === 'draft' && action.reason.trim().length >= 5 && action.reason.trim().length <= 240 && action.resource === 'Jira'
+    case 'edit': return state.ticket?.status === 'draft' && action.reason.trim().length >= 5 && action.reason.trim().length <= 240 && action.resource === state.ticket.resource
       ? { ...state, ticket: { ...state.ticket, resource: action.resource, reason: action.reason.trim() } } : state;
     case 'submit': {
       if (state.ticket?.status !== 'draft') return state;
       if (action.fail) return buddy(state, 'Демосервис временно недоступен. Заявка не отправлена, данные сохранены. Нажми «Отправить заявку» ещё раз.');
-      return buddy({ ...state, ticket: { ...state.ticket, status: 'pending' } }, 'Заявка REQ-042 создана и ожидает согласования. Пока доступ не выдан, можно изучить инструкцию команды.', 'team');
+      return append({ ...state, ticket: { ...state.ticket, status: 'pending' } }, {
+        role: 'buddy',
+        text: 'Заявка создана. Пока доступ согласовывают, можно изучить инструкцию команды.',
+        source: 'team',
+        actions: [{ type: 'card', kind: 'ticket', data: { ticket_id: state.ticket.id, status: 'Создана', sla_hours: 2 } }],
+      });
     }
     case 'approve': {
       if (state.ticket?.status !== 'pending') return state;
-      return buddy({ ...state, ticket: { ...state.ticket, status: 'approved' }, completed: [...new Set<QuestId>([...state.completed, 'access'])] }, 'Есть! Демосервис подтвердил доступ к Jira. Квест завершён: +120 XP. Ты на шаг ближе к первой задаче!');
+      return buddy({ ...state, ticket: { ...state.ticket, status: 'approved' }, completed: [...new Set<QuestId>([...state.completed, 'access'])] }, `Есть! Демосервис подтвердил доступ к ${state.ticket.resource}. Квест завершён: +120 XP. Ты на шаг ближе к первой задаче!`);
     }
     case 'read': return state.completed.includes('guide') ? state : buddy({ ...state, completed: [...state.completed, 'guide'] }, 'Инструкция изучена — ещё +100 XP! Если что-то осталось непонятным, обсуди это с наставником.');
   }
@@ -101,9 +119,17 @@ export function loadState(storage: Pick<Storage, 'getItem'> = localStorage): Dem
     if (!data || data.version !== 1 || !Array.isArray(data.completed) || !Array.isArray(data.messages) || data.messages.length > 60) return initialState();
     if (!data.completed.every((q: unknown) => ['team', 'access', 'guide'].includes(String(q))) || new Set(data.completed).size !== data.completed.length) return initialState();
     if (!data.messages.every((m: Message) => Number.isFinite(m.id) && ['buddy', 'user'].includes(m.role) && typeof m.text === 'string' && m.text.length <= 2000 && (!m.source || ['team', 'access'].includes(m.source)) && (!m.kind || ['request', 'briefing'].includes(m.kind)))) return initialState();
-    if (data.ticket && (data.ticket.id !== 'REQ-042' || data.ticket.resource !== 'Jira' || typeof data.ticket.reason !== 'string' || !['draft', 'pending', 'approved'].includes(data.ticket.status))) return initialState();
+    if (data.ticket && (data.ticket.id !== 'REQ-042' || !['Jira', 'Confluence', 'Figma'].includes(data.ticket.resource) || typeof data.ticket.reason !== 'string' || !['draft', 'pending', 'approved'].includes(data.ticket.status))) return initialState();
     if (data.completed.includes('access') !== (data.ticket?.status === 'approved')) return initialState();
-    return data;
+    const messages = data.messages.map((message: Message) => ({
+      ...message,
+      sources: Array.isArray(message.sources) ? message.sources.filter(item => typeof item?.source === 'string') : undefined,
+      actions: Array.isArray(message.actions) ? message.actions.filter(item =>
+        (item?.type === 'button' && item.id === 'notify_mentor' && typeof item.label === 'string')
+        || (item?.type === 'card' && item.kind === 'ticket' && typeof item.data?.ticket_id === 'string'
+          && typeof item.data.sla_hours === 'number' && (item.data.status === undefined || typeof item.data.status === 'string'))) : undefined,
+    }));
+    return { ...data, messages };
   } catch { return initialState(); }
 }
 export function saveState(state: DemoState, storage: Pick<Storage, 'setItem'> = localStorage): boolean {
