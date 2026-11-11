@@ -98,17 +98,9 @@ svg { flex-shrink: 0; }
 .nav-primary svg { color: var(--blue-text); }
 .sidebar button:hover:not(:disabled) { background: #e8f3ff; }
 .buddy-intro { margin-top: 102px; position: relative; }
-.buddy-art { display: block; position: relative; }
+.buddy-art { display: block; }
 .buddy-art img { width: 100%; }
-.buddy-art::before, .buddy-art::after { content: ""; position: absolute; pointer-events: none; }
-.buddy-art::after { background: url("/assets/avito-logo.svg") left center / auto 100% no-repeat; aspect-ratio: 410 / 380; }
 .buddy-art-wave img { border-radius: 22px 22px 0 0; mix-blend-mode: multiply; }
-.buddy-art-wave::before { inset: 77% 25% -5% 52%; background: radial-gradient(ellipse, #eef1f2 73%, #eef1f200 88%); }
-.buddy-art-wave::after { left: 55%; top: 80%; height: 17%; transform: rotate(-17deg); }
-.buddy-art-avatar::before { inset: 76% 30% 0 48%; background: radial-gradient(ellipse, #e3f2fd 62%, #e3f2fd00 77%); }
-.buddy-art-avatar::after { left: 51%; top: 79%; height: 15%; transform: rotate(-15deg); }
-.buddy-art-laptop::before { inset: 71% 68% 10% 19%; background: radial-gradient(ellipse, #d9dce4 62%, #d9dce400 78%); }
-.buddy-art-laptop::after { left: 21%; top: 73%; height: 14%; transform: skewX(13deg); }
 .buddy-intro .panel { position: relative; padding: 13px 18px; border-radius: 16px; margin-top: -2px; }
 .buddy-intro strong { font-size: 16px; }
 .buddy-intro p { color: var(--muted); font-size: 13px; line-height: 1.32; margin-top: 5px; }
@@ -148,7 +140,7 @@ svg { flex-shrink: 0; }
 .chat-header h1 { font-size: 17px; line-height: 1.16; }
 .chat-header p { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .online-dot { width: 8px; height: 8px; border-radius: 50%; background: #0cc44e; }
-.chat-scroll { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 12px 20px; scrollbar-width: thin; scrollbar-color: #cad8ea transparent; }
+.chat-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 12px 20px; scrollbar-width: thin; scrollbar-color: #cad8ea transparent; }
 .message { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
 .message.user { flex-direction: row-reverse; }
 .message-avatar { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; }
