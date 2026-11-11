@@ -12,9 +12,7 @@
                         "description": "Текст вопроса или ключевые слова"
                     }
                 },
-                "required": [
-                    "query"
-                ]
+                "required": ["query"]
             }
         }
     },
@@ -32,6 +30,17 @@
     {
         "type": "function",
         "function": {
+            "name": "get_checklist",
+            "description": "Возвращает текущий прогресс стажера по чек-листу адаптации",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_access_ticket",
             "description": "Создает заявку в IT-поддержку на выдачу доступов",
             "parameters": {
@@ -40,11 +49,13 @@
                     "system": {
                         "type": "string",
                         "description": "Название системы (confluence, jira, figma, github)"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Причина запроса доступа (для карточки заявки)"
                     }
                 },
-                "required": [
-                    "system"
-                ]
+                "required": ["system", "reason"]
             }
         }
     },
@@ -59,11 +70,13 @@
                     "message": {
                         "type": "string",
                         "description": "Текст сообщения наставнику"
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Категория обращения (например, doc_issue или help_request)"
                     }
                 },
-                "required": [
-                    "message"
-                ]
+                "required": ["message"]
             }
         }
     },
