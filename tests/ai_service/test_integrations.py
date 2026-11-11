@@ -70,3 +70,14 @@ async def test_backend_client_raises_for_http_error():
             await BackendClient(client, "http://backend.local").get_jira_tasks(
                 user_id="intern-7", role="intern"
             )
+
+
+@pytest.mark.asyncio
+async def test_backend_client_rejects_non_object_json_response():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[]))
+    ) as client:
+        with pytest.raises(ValueError, match="JSON object"):
+            await BackendClient(client, "http://backend.local").get_jira_tasks(
+                user_id="intern-7", role="intern"
+            )

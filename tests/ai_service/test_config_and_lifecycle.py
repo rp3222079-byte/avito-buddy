@@ -1,0 +1,90 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi import FastAPI
+
+import app.core.config as config_module
+import app.main as main_module
+
+
+def test_get_settings_reads_environment_values(monkeypatch, tmp_path):
+    config_module.get_settings.cache_clear()
+    values = {
+        "LLM_BASE_URL": "http://llm.test/v1",
+        "LLM_API_KEY": "test-key",
+        "LLM_MODEL": "test-model",
+        "LLM_TIMEOUT_SECONDS": "7.5",
+        "RAG_BASE_URL": "http://rag.test",
+        "BACKEND_BASE_URL": "http://backend.test",
+        "APP_TIMEZONE": "UTC",
+        "DEMO_USER_ID": "test-user",
+        "DEMO_USER_ROLE": "mentor",
+        "SYSTEM_PROMPT_PATH": str(tmp_path / "prompt.txt"),
+        "TOOLS_SCHEMA_PATH": str(tmp_path / "tools.json"),
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+    settings = config_module.get_settings()
+
+    assert settings.llm_base_url == values["LLM_BASE_URL"]
+    assert settings.llm_api_key == values["LLM_API_KEY"]
+    assert settings.llm_model == values["LLM_MODEL"]
+    assert settings.llm_timeout_seconds == 7.5
+    assert settings.rag_base_url == values["RAG_BASE_URL"]
+    assert settings.backend_base_url == values["BACKEND_BASE_URL"]
+    assert settings.app_timezone == "UTC"
+    assert settings.demo_user_id == "test-user"
+    assert settings.demo_user_role == "mentor"
+    assert str(settings.system_prompt_path) == values["SYSTEM_PROMPT_PATH"]
+    assert str(settings.tools_schema_path) == values["TOOLS_SCHEMA_PATH"]
+    config_module.get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_initializes_and_closes_clients(monkeypatch, tmp_path):
+    settings = SimpleNamespace(
+        llm_base_url="http://llm.test/v1",
+        llm_api_key="key",
+        llm_model="model",
+        llm_timeout_seconds=4,
+        rag_base_url="http://rag.test",
+        backend_base_url="http://backend.test",
+        app_timezone="UTC",
+        demo_user_id="demo-user",
+        demo_user_role="intern",
+        system_prompt_path=tmp_path / "system_prompt.txt",
+        tools_schema_path=tmp_path / "tools.json",
+    )
+    llm_client = SimpleNamespace(close=AsyncMock())
+    http_client = SimpleNamespace(aclose=AsyncMock())
+    agent = object()
+    executor = object()
+    rag_client = object()
+    backend_client = object()
+    openai_factory = MagicMock(return_value=llm_client)
+    http_factory = MagicMock(return_value=http_client)
+    agent_factory = MagicMock(return_value=agent)
+    executor_factory = MagicMock(return_value=executor)
+
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(main_module, "AsyncOpenAI", openai_factory)
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", http_factory)
+    monkeypatch.setattr(main_module, "RagClient", MagicMock(return_value=rag_client))
+    monkeypatch.setattr(main_module, "BackendClient", MagicMock(return_value=backend_client))
+    monkeypatch.setattr(main_module, "ToolExecutor", executor_factory)
+    monkeypatch.setattr(main_module, "AgentService", agent_factory)
+    application = FastAPI()
+
+    async with main_module.lifespan(application):
+        assert application.state.settings is settings
+        assert application.state.llm_client is llm_client
+        assert application.state.demo_user_id == "demo-user"
+        assert application.state.demo_user_role == "intern"
+        assert application.state.agent is agent
+        executor_factory.assert_called_once()
+        agent_factory.assert_called_once()
+
+    llm_client.close.assert_awaited_once()
+    http_client.aclose.assert_awaited_once()

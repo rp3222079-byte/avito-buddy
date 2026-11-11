@@ -89,3 +89,25 @@ async def test_tool_service_failure_is_returned_as_error(clients):
     )
 
     assert result == {"error": "tool service unavailable", "detail": "bad response"}
+
+
+def test_executor_fails_fast_when_enabled_schema_is_missing(tmp_path, clients):
+    incomplete_schema = tmp_path / "tools.json"
+    incomplete_schema.write_text(
+        '[{"type":"function","function":{"name":"search_knowledge_base"}}]',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Missing tool definitions"):
+        ToolExecutor(incomplete_schema, *clients)
+
+
+@pytest.mark.asyncio
+async def test_executor_returns_error_for_unknown_tool(clients):
+    executor = make_executor(clients)
+
+    result = await executor.execute(
+        "create_access_ticket", {"system": "jira"}, user_id="intern-7", role="intern"
+    )
+
+    assert result == {"error": "Tool is not enabled: create_access_ticket"}

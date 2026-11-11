@@ -57,6 +57,24 @@ async def test_agent_sends_system_prompt_and_returns_plain_answer(prompt_file):
     executor.execute.assert_not_awaited()
 
 
+def test_agent_extracts_unique_sources_and_skips_malformed_chunks():
+    assert AgentService._sources_from_tool_result(
+        "get_jira_tasks", {"results": [{"source": "ignored.md"}]}
+    ) == []
+    assert AgentService._sources_from_tool_result(
+        "search_knowledge_base",
+        {
+            "results": [
+                "malformed chunk",
+                {"metadata": {"source": "guide.md"}},
+                {"source": "guide.md"},
+                {"source": "faq.md"},
+                {},
+            ]
+        },
+    ) == [{"source": "guide.md"}, {"source": "faq.md"}]
+
+
 @pytest.mark.asyncio
 async def test_agent_runs_tool_then_returns_sources_and_final_answer(prompt_file):
     llm = AsyncMock()
@@ -99,6 +117,26 @@ async def test_agent_handles_invalid_tool_arguments(prompt_file):
 
 
 @pytest.mark.asyncio
+async def test_agent_rejects_non_object_tool_arguments(prompt_file):
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = [
+        completion(tool_calls=[tool_call(arguments='["not", "an object"]')]),
+        completion("Не удалось выполнить поиск."),
+    ]
+    executor = FakeToolExecutor()
+    agent = AgentService(llm, "test-model", prompt_file, "Asia/Novosibirsk", executor)
+
+    await agent.reply("Найди", role="intern", user_id="intern-7")
+
+    executor.execute.assert_not_awaited()
+    tool_result = json.loads(
+        llm.chat.completions.create.call_args_list[1].kwargs["messages"][-1]["content"]
+    )
+    assert tool_result["error"] == "invalid tool arguments"
+    assert tool_result["detail"] == "tool arguments must be a JSON object"
+
+
+@pytest.mark.asyncio
 async def test_agent_stops_after_four_tool_rounds(prompt_file):
     llm = AsyncMock()
     llm.chat.completions.create.return_value = completion(tool_calls=[tool_call()])
@@ -130,3 +168,78 @@ async def test_stream_reply_emits_tokens_and_done(prompt_file):
         {"event": "done", "sources": [], "tools_used": []},
     ]
     assert llm.chat.completions.create.call_args.kwargs["stream"] is True
+
+
+@pytest.mark.asyncio
+async def test_stream_reply_executes_streamed_tool_call(prompt_file):
+    async def tool_chunks():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(
+                index=0,
+                id="call-1",
+                function=SimpleNamespace(name="search_knowledge_base", arguments=""),
+            )],
+        ))])
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(
+                index=0,
+                id=None,
+                function=SimpleNamespace(name=None, arguments='{"query":"policy"}'),
+            )],
+        ))])
+
+    async def answer_chunks():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+            content="Нашёл инструкцию.", tool_calls=[]
+        ))])
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = [tool_chunks(), answer_chunks()]
+    executor = FakeToolExecutor()
+    agent = AgentService(llm, "test-model", prompt_file, "Asia/Novosibirsk", executor)
+
+    events = [event async for event in agent.stream_reply("Найди", "intern", "intern-7")]
+
+    executor.execute.assert_awaited_once_with(
+        "search_knowledge_base", {"query": "policy"}, user_id="intern-7", role="intern"
+    )
+    assert events == [
+        {"event": "token", "text": "Нашёл инструкцию."},
+        {"event": "done", "sources": [{"source": "guide.md"}], "tools_used": ["search_knowledge_base"]},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_reply_reports_error_after_four_tool_rounds(prompt_file):
+    async def tool_chunks(round_number):
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(
+                index=0,
+                id=f"call-{round_number}",
+                function=SimpleNamespace(name="search_knowledge_base", arguments=""),
+            )],
+        ))])
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(
+                index=0,
+                id=None,
+                function=SimpleNamespace(name=None, arguments='{"query":"policy"}'),
+            )],
+        ))])
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = [tool_chunks(index) for index in range(4)]
+    executor = FakeToolExecutor()
+    agent = AgentService(llm, "test-model", prompt_file, "Asia/Novosibirsk", executor)
+
+    events = [event async for event in agent.stream_reply("Найди", "intern", "intern-7")]
+
+    assert len(events) == 1
+    assert events[0]["event"] == "error"
+    assert "допустимое число" in events[0]["message"]
+    assert llm.chat.completions.create.await_count == 4
+    assert executor.execute.await_count == 4
