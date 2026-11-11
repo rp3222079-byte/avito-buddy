@@ -1,0 +1,50 @@
+{
+  "mentor_id": "mentor_smith",
+  "mentor_name": "Алексей Смит",
+  "interns": [
+    {
+      "intern_id": "intern_ivan",
+      "name": "Иван Иванов",
+      "team": "Backend",
+      "progress_percent": 55,
+      "status": "blocked",
+      "last_active": "2026-11-10T14:30:00",
+      "blockers": [
+        "Ждет доступ к Confluence (заявка IT-123)",
+        "Застрял на задаче AVT-555 (Fix bug) из-за отсутствия логов"
+      ]
+    },
+    {
+      "intern_id": "intern_anna",
+      "name": "Анна Петрова",
+      "team": "Frontend",
+      "progress_percent": 85,
+      "status": "on_track",
+      "last_active": "2026-11-10T09:15:00",
+      "blockers": []
+    },
+    {
+      "intern_id": "intern_oleg",
+      "name": "Олег Смирнов",
+      "team": "Backend",
+      "progress_percent": 70,
+      "status": "at_risk",
+      "last_active": "2026-11-09T18:00:00",
+      "blockers": [
+        "Нет доступа к Redis (база данных)"
+      ]
+    },
+    {
+      "intern_id": "intern_maria",
+      "name": "Мария Козлова",
+      "team": "Mobile (iOS)",
+      "progress_percent": 20,
+      "status": "blocked",
+      "last_active": "2026-11-10T11:00:00",
+      "blockers": [
+        "Не может запустить Xcode",
+        "Не знает, как запросить доступ к дизайн-системе"
+      ]
+    }
+  ]
+}
