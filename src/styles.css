@@ -103,7 +103,7 @@ svg { flex-shrink: 0; }
 .buddy-art::before, .buddy-art::after { content: ""; position: absolute; pointer-events: none; }
 .buddy-art::after { background: url("/assets/avito-logo.svg") left center / auto 100% no-repeat; aspect-ratio: 410 / 380; }
 .buddy-art-wave img { border-radius: 22px 22px 0 0; mix-blend-mode: multiply; }
-.buddy-art-wave::before { inset: 78% 33% 0 52%; background: radial-gradient(ellipse, #eef1f2 63%, #eef1f200 77%); }
+.buddy-art-wave::before { inset: 77% 25% -5% 52%; background: radial-gradient(ellipse, #eef1f2 73%, #eef1f200 88%); }
 .buddy-art-wave::after { left: 55%; top: 80%; height: 17%; transform: rotate(-17deg); }
 .buddy-art-avatar::before { inset: 76% 30% 0 48%; background: radial-gradient(ellipse, #e3f2fd 62%, #e3f2fd00 77%); }
 .buddy-art-avatar::after { left: 51%; top: 79%; height: 15%; transform: rotate(-15deg); }
@@ -144,7 +144,7 @@ svg { flex-shrink: 0; }
   clip-path: path("M0 29 C27 27 29 13 54 21 C81 31 94 17 117 6 C144 -8 166 0 183 10 C202 22 195 39 180 46 C155 56 120 50 91 51 C55 53 22 50 0 29 Z");
   pointer-events: none;
 }
-.buddy-avatar { width: 43px; height: 43px; border-radius: 50%; }
+.buddy-avatar { width: 43px; height: 43px; border-radius: 50%; overflow: hidden; }
 .chat-header h1 { font-size: 17px; line-height: 1.16; }
 .chat-header p { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .online-dot { width: 8px; height: 8px; border-radius: 50%; background: #0cc44e; }
