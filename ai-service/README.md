@@ -52,7 +52,8 @@ run the AI-service tests:
 
 The shared tests live in the repository-level `tests/` directory, grouped by
 area (currently `tests/ai_service/`). They mock the LLM, RAG, and Go API, so
-those services do not need to be running.
+those services do not need to be running. Pytest reports coverage for
+`ai-service/app` and fails if it drops below 80%.
 
 ## Endpoints
 
