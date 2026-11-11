@@ -1,6 +1,22 @@
 # Предлагаемые границы интеграции
 
-Черновик для согласования с Даней и Степаном. В текущем прототипе сетевых вызовов нет; конкретные endpoint и SSE-события ещё не согласованы командой.
+Черновик контракта для согласования с Даней, Степаном и Романом. AI-service теперь имеет `/api/chat` и `/api/chat/stream`; Go proxy и UI ещё не подключены.
+
+## Go Backend → AI-service
+
+- `POST /api/chat` — JSON `{"message":"..."}`; возвращает `reply`, `model`, `sources`, `tools_used`, `actions`.
+- `POST /api/chat/stream` — то же тело; SSE events: `token` с `{"text":"..."}`, затем `done` с источниками/инструментами или `error`.
+- После проверки сессии Backend передаёт `X-User-ID` и `X-User-Role` (`intern` или `mentor`). Модель не получает возможность выбирать эти значения через tool arguments.
+- Демо-значения `intern_ivan` / `intern` предусмотрены только для локального Swagger. Не использовать их вместо авторизации.
+
+## Инструменты AI-service → внешние сервисы
+
+- `search_knowledge_base(query)` → `POST {RAG_BASE_URL}/rag/search`, JSON query plus `X-User-ID` and `X-User-Role` so RAG can filter documents by access rights.
+- `get_jira_tasks()` → `GET {BACKEND_BASE_URL}/api/jira/tasks`, с внутренними заголовками `X-User-ID` и `X-User-Role`.
+- Ответы RAG ожидаются как JSON-объект с `results` (либо `chunks`), содержащим фрагменты и источник. Желательно также возвращать признак уверенности/score.
+- Backend должен фильтровать задачи по пользователю из доверенного контекста, а не по аргументу модели.
+
+Go proxy flow: UI → Go Backend (session/role checks) → AI-service; AI-service → Ollama and, when selected, RAG/Go tool API; response/SSE returns through Go Backend to UI. Keep Ollama and internal tool services off the browser path.
 
 ## Данные, которые уже использует интерфейс
 
