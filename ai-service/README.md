@@ -40,6 +40,20 @@ cp ai-service/.env.example ai-service/.env
 
 Open `http://127.0.0.1:8000/docs` for the interactive API docs.
 
+## Run tests
+
+From the repository root, install the application and test dependencies, then
+run the AI-service tests:
+
+```sh
+.venv/bin/python -m pip install -r requirements.txt -r ai-service/requirements-dev.txt
+.venv/bin/python -m pytest
+```
+
+The shared tests live in the repository-level `tests/` directory, grouped by
+area (currently `tests/ai_service/`). They mock the LLM, RAG, and Go API, so
+those services do not need to be running.
+
 ## Endpoints
 
 - `GET /health` — process liveness; it does not wait for the model.
