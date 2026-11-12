@@ -12,6 +12,7 @@ tags:
   - name: mentor
   - name: briefing
   - name: chat
+  - name: pending-action
   - name: rag
 paths:
   /health:
@@ -113,6 +114,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Ticket" }
         "422": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /api/notify-mentor:
     post:
       tags: [mentor]
@@ -132,6 +134,7 @@ paths:
               required: [message]
               properties:
                 message: { type: string, minLength: 1, maxLength: 1000 }
+                idempotency_key: { type: string }
       responses:
         "200":
           description: Уведомление принято
@@ -187,14 +190,6 @@ paths:
       security:
         - cookieAuth: []
         - internalToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                force: { type: boolean, default: false }
       responses:
         "200":
           description: Право отправить брифинг
@@ -206,6 +201,71 @@ paths:
                 properties:
                   should_send: { type: boolean }
                   date: { type: string, format: date }
+  /api/pending-action:
+    post:
+      tags: [pending-action]
+      operationId: createPendingAction
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PendingActionRequest"
+      responses:
+        "201":
+          description: Черновик действия создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingActionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/pending-action/confirm:
+    post:
+      tags: [pending-action]
+      operationId: confirmPendingAction
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmActionRequest"
+      responses:
+        "200":
+          description: Действие выполнено, возвращается результат (Ticket или Notification)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Ticket"
+                  - $ref: "#/components/schemas/Notification"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+  /api/pending-action/cancel:
+    post:
+      tags: [pending-action]
+      operationId: cancelPendingAction
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmActionRequest"
+      responses:
+        "204":
+          description: Черновик отменён
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/chat:
     post:
       tags: [chat]
@@ -293,6 +353,9 @@ components:
             required: [message]
             properties:
               message: { type: string, minLength: 1 }
+              confirmed_action:
+                type: string
+                enum: [create_access_ticket, notify_mentor]
   schemas:
     Health:
       type: object
@@ -324,11 +387,15 @@ components:
         created_at: { type: string, format: date }
     Ticket:
       type: object
-      required: [ticket_id, status, sla_hours]
+      required: [request_id, system, status, sla_hours]
       properties:
-        ticket_id: { type: string, example: IT-123 }
+        request_id: { type: string, example: IT-123 }
+        system: { type: string, example: confluence }
+        access_level: { type: string, example: read }
+        reason: { type: string, example: "Для выполнения задач стажировки" }
         status: { type: string, example: created }
         sla_hours: { type: integer, example: 2 }
+        existing: { type: boolean }
     Notification:
       type: object
       required: [status, mentor_name]
@@ -348,6 +415,43 @@ components:
         blockers:
           type: array
           items: { type: string }
+    PendingActionRequest:
+      type: object
+      required: [action, payload]
+      properties:
+        action:
+          type: string
+          enum: [create_access_ticket, notify_mentor]
+        payload:
+          type: object
+          required: [system]
+          properties:
+            system:
+              type: string
+              enum: [confluence, jira, figma, github]
+            access_level:
+              type: string
+              enum: [read, write, admin]
+            reason:
+              type: string
+              maxLength: 240
+            message:
+              type: string
+              maxLength: 1000
+    PendingActionResponse:
+      type: object
+      required: [pending_id, action, status, expires_in_seconds, payload]
+      properties:
+        pending_id: { type: string, example: p_abc123 }
+        action: { type: string, enum: [create_access_ticket, notify_mentor] }
+        status: { type: string, enum: [pending, confirmed, cancelled] }
+        expires_in_seconds: { type: integer, example: 600 }
+        payload: { type: object }
+    ConfirmActionRequest:
+      type: object
+      required: [pending_id]
+      properties:
+        pending_id: { type: string, example: p_abc123 }
     RAGResult:
       type: object
       required: [text, source, score, chunk_id]
@@ -388,6 +492,21 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
       description: Роль не имеет доступа
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Конфликт состояния
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Gone:
+      description: Ресурс истёк
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

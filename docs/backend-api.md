@@ -1,4 +1,4 @@
-# Backend и RAG
+# Backend, AI и RAG
 
 Go Backend работает независимо от frontend и является единственной публичной точкой входа для браузера. Полный машиночитаемый контракт находится в `docs/openapi.yaml`.
 
@@ -20,12 +20,36 @@ export no_proxy=localhost,127.0.0.1
 Сервисы:
 
 - Backend: `http://localhost:8080`
+- AI-service: `http://localhost:8000`
 - RAG и Swagger: `http://localhost:8001/docs`
 - ChromaDB: `http://localhost:8002`
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
 Первый запуск RAG скачивает мультиязычную ONNX-модель размером около 220 МБ. Модель сохраняется в Docker volume `embedding_models`.
+AI-service требует запущенного Ollama с моделью `qwen3:8b` (по умолчанию на хосте).
+
+## Демо-режим и ограничения стенда
+
+> **Важно:** Текущая реализация использует **демо-авторизацию** для локальной разработки и стенда.
+
+**Что это значит:**
+- `POST /api/session` принимает `user_id` и `role` из тела запроса и сверяет их со списком `AllowedIdentities` (demo-пользователи).
+- **Это не настоящая аутентификация** — личность пользователя не верифицируется.
+- В продакшене необходима интеграция с корпоративной системой входа (OAuth/SSO), формирование сессии только из проверенной личности, проверка связи «стажёр — наставник» на стороне Backend.
+- Переменная `DEMO_MODE=true` (по умолчанию) включает этот режим. При `DEMO_MODE=false` эндпоинт `/api/session` вернёт ошибку конфигурации.
+- `INTERNAL_TOKEN` и `X-Request-Context` **никогда не должны попадать в браузер** — они используются только для межсервисного взаимодействия (Go Backend ↔ AI-service).
+
+**Демо-пользователи (только для стенда):**
+| user_id | role |
+|---|---|
+| `intern_ivan` | `intern` |
+| `intern_anna` | `intern` |
+| `intern_oleg` | `intern` |
+| `intern_maria` | `intern` |
+| `mentor_smith` | `mentor` |
+
+---
 
 ## Демо-пользователи
 
@@ -48,18 +72,23 @@ curl -i -c /tmp/avito-intern.cookies \
   http://localhost:8080/api/session
 ```
 
-Задачи и создание тикета:
+Задачи и создание заявки через pending_action:
 
 ```sh
-curl -b /tmp/avito-intern.cookies http://localhost:8080/api/jira/tasks
-
+# 1. Создать черновик заявки
 curl -b /tmp/avito-intern.cookies \
   -H 'Content-Type: application/json' \
-  -d '{"system":"confluence"}' \
-  http://localhost:8080/api/jira/ticket
+  -d '{"action":"create_access_ticket","payload":{"system":"confluence","access_level":"read","reason":"Для задач стажировки"}}' \
+  http://localhost:8080/api/pending-action
+
+# 2. Подтвердить черновик (pending_id из ответа предыдущего шага)
+curl -b /tmp/avito-intern.cookies \
+  -H 'Content-Type: application/json' \
+  -d '{"pending_id":"p_abc123"}' \
+  http://localhost:8080/api/pending-action/confirm
 ```
 
-Повторный запрос на ту же систему вернёт тот же `ticket_id` с HTTP 200 вместо создания новой записи.
+Повторный запрос на ту же систему вернёт тот же `request_id` с HTTP 200 вместо создания новой записи.
 
 Проверка роли наставника:
 
@@ -75,6 +104,17 @@ curl -b /tmp/avito-mentor.cookies http://localhost:8080/api/mentor/interns
 ```
 
 Первый запрос возвращает `403`, второй — список стажёров наставника.
+
+Уведомление наставника (только стажёр, с идемпотентностью):
+
+```sh
+curl -b /tmp/avito-intern.cookies \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Нужна помощь","idempotency_key":"notify-123"}' \
+  http://localhost:8080/api/notify-mentor
+```
+
+Повторный запрос с тем же `idempotency_key` вернёт тот же результат без повторной отправки.
 
 Поиск по базе знаний:
 
@@ -98,6 +138,8 @@ await fetch("http://localhost:8080/api/jira/tasks", {
 
 `POST /api/chat/stream` возвращает SSE-события `token`, затем `done` либо `error`. Поток проксируется без изменения тела.
 
+Подтверждение действий: frontend получает `pending_action` с `pending_id`, показывает черновик пользователю, после нажатия «Подтвердить» отправляет `POST /api/pending-action/confirm` с `pending_id`. Backend выполняет действие и возвращает каноническую модель заявки (`request_id`, `system`, `status`, `sla_hours`, `existing`).
+
 ## Подключение AI-service
 
 Внутренние вызовы AI-service к Go Backend должны передавать три заголовка:
@@ -110,6 +152,8 @@ X-User-Role: intern
 
 Один только `X-User-ID` не даёт доступ. Значение `INTERNAL_TOKEN` должно совпадать у Go Backend и AI-service и не должно передаваться браузеру.
 
+AI-service также получает подписанный `X-Request-Context` для верификации доверенного контекста.
+
 ## Тесты
 
 ```sh
@@ -117,6 +161,11 @@ cd backend
 go test ./...
 
 cd ../rag-service
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+PYTHONPATH=. .venv/bin/pytest -q
+
+cd ../ai-service
 python -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 PYTHONPATH=. .venv/bin/pytest -q

@@ -2,7 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -34,29 +38,40 @@ type TicketStore interface {
 }
 
 type Notifier interface {
-	Notify(context.Context, string, string) (domain.Notification, error)
+	Notify(context.Context, string, string, string) (domain.Notification, error)
 }
 
 type BriefingStore interface {
 	Status(context.Context, string, string) (bool, error)
-	Claim(context.Context, string, string, time.Duration, bool) (bool, error)
+	Claim(context.Context, string, string, time.Duration) (bool, error)
+}
+
+type PendingActionStore interface {
+	CreatePendingAction(context.Context, *domain.PendingAction) error
+	GetPendingAction(context.Context, string) (*domain.PendingAction, error)
+	UpdatePendingActionStatus(context.Context, string, string) error
+	DeletePendingAction(context.Context, string) error
 }
 
 type Dependencies struct {
-	Sessions          SessionStore
-	Tasks             TaskStore
-	Mentors           MentorStore
-	Tickets           TicketStore
-	Notifier          Notifier
-	Briefings         BriefingStore
-	SessionTTL        time.Duration
-	BriefingTTL       time.Duration
-	Now               func() time.Time
-	AIBaseURL         string
-	HTTPClient        *http.Client
-	InternalToken     string
-	AllowedOrigins    []string
-	AllowedIdentities map[string]domain.Role
+	Sessions             SessionStore
+	Tasks                TaskStore
+	Mentors              MentorStore
+	Tickets              TicketStore
+	Notifier             Notifier
+	Briefings            BriefingStore
+	PendingActions       PendingActionStore
+	SessionTTL           time.Duration
+	BriefingTTL          time.Duration
+	PendingActionTTL     time.Duration
+	Now                  func() time.Time
+	AIBaseURL            string
+	HTTPClient           *http.Client
+	InternalToken        string
+	AllowedOrigins       []string
+	AllowedIdentities    map[string]domain.Role
+	RequestContextSecret string
+	DemoMode             bool
 }
 
 type errorEnvelope struct {
@@ -80,10 +95,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	authorized := router.Group("/api", authenticate(deps))
 	authorized.DELETE("/session", deleteSession(deps.Sessions))
 	authorized.GET("/jira/tasks", getTasks(deps.Tasks))
-	authorized.POST("/jira/ticket", createTicket(deps.Tickets))
+	authorized.POST("/jira/ticket", requireRole(domain.RoleIntern), createTicket(deps.Tickets))
 	authorized.POST("/notify-mentor", requireRole(domain.RoleIntern), notifyMentor(deps.Notifier))
 	authorized.GET("/briefing/status", requireRole(domain.RoleIntern), briefingStatus(deps))
 	authorized.POST("/briefing/claim", requireRole(domain.RoleIntern), claimBriefing(deps))
+	authorized.POST("/pending-action", requireRole(domain.RoleIntern), createPendingAction(deps))
+	authorized.POST("/pending-action/confirm", requireRole(domain.RoleIntern), confirmPendingAction(deps))
+	authorized.POST("/pending-action/cancel", requireRole(domain.RoleIntern), cancelPendingAction(deps))
 	authorized.POST("/chat", proxyAI(deps, "/api/chat"))
 	authorized.POST("/chat/stream", proxyAI(deps, "/api/chat/stream"))
 	mentor := authorized.Group("/mentor", requireRole(domain.RoleMentor))
@@ -277,7 +295,8 @@ func createTicket(store TicketStore) gin.HandlerFunc {
 
 func notifyMentor(notifier Notifier) gin.HandlerFunc {
 	type request struct {
-		Message string `json:"message" binding:"required,max=1000"`
+		Message       string `json:"message" binding:"required,max=1000"`
+		IdempotencyKey string `json:"idempotency_key,omitempty"`
 	}
 	return func(c *gin.Context) {
 		var input request
@@ -286,7 +305,7 @@ func notifyMentor(notifier Notifier) gin.HandlerFunc {
 			return
 		}
 		session := c.MustGet("session").(domain.Session)
-		notification, err := notifier.Notify(c.Request.Context(), session.UserID, strings.TrimSpace(input.Message))
+		notification, err := notifier.Notify(c.Request.Context(), session.UserID, strings.TrimSpace(input.Message), input.IdempotencyKey)
 		if err != nil {
 			respondError(c, http.StatusServiceUnavailable, "notification_unavailable", "Не удалось отправить уведомление наставнику")
 			return
@@ -309,28 +328,192 @@ func briefingStatus(deps Dependencies) gin.HandlerFunc {
 }
 
 func claimBriefing(deps Dependencies) gin.HandlerFunc {
-	type request struct {
-		Force bool `json:"force"`
-	}
 	return func(c *gin.Context) {
-		var input request
-		if err := c.ShouldBindJSON(&input); err != nil {
-			respondError(c, http.StatusBadRequest, "invalid_request", "Некорректные параметры брифинга")
-			return
-		}
 		session := c.MustGet("session").(domain.Session)
 		date := deps.Now().Format(time.DateOnly)
 		ttl := deps.BriefingTTL
 		if ttl == 0 {
 			ttl = 48 * time.Hour
 		}
-		shouldSend, err := deps.Briefings.Claim(c.Request.Context(), session.UserID, date, ttl, input.Force)
+		shouldSend, err := deps.Briefings.Claim(c.Request.Context(), session.UserID, date, ttl)
 		if err != nil {
 			respondError(c, http.StatusServiceUnavailable, "briefing_unavailable", "Не удалось зарегистрировать брифинг")
 			return
 		}
 		c.JSON(http.StatusOK, domain.BriefingClaim{ShouldSend: shouldSend, Date: date})
 	}
+}
+
+func createPendingAction(deps Dependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var input domain.PendingActionRequest
+		if err := c.ShouldBindJSON(&input); err != nil {
+			respondError(c, http.StatusBadRequest, "invalid_request", "Некорректные данные действия")
+			return
+		}
+		allowedActions := map[string]bool{"create_access_ticket": true, "notify_mentor": true}
+		if !allowedActions[input.Action] {
+			respondError(c, http.StatusUnprocessableEntity, "unsupported_action", "Это действие не поддерживается")
+			return
+		}
+		session := c.MustGet("session").(domain.Session)
+
+		pendingID := generatePendingID()
+		now := deps.Now()
+		expiresIn := int(deps.PendingActionTTL.Seconds())
+		if expiresIn == 0 {
+			expiresIn = 600 // 10 minutes default
+		}
+
+		action := &domain.PendingAction{
+			PendingID:  pendingID,
+			Action:     input.Action,
+			Status:     "pending",
+			ExpiresIn:  expiresIn,
+			Payload:    input.Payload,
+			UserID:     session.UserID,
+			CreatedAt:  now,
+		}
+
+		if err := deps.PendingActions.CreatePendingAction(c.Request.Context(), action); err != nil {
+			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось создать черновик действия")
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"pending_id":       pendingID,
+			"action":           input.Action,
+			"status":           "pending",
+			"expires_in_seconds": expiresIn,
+			"payload":          input.Payload,
+		})
+	}
+}
+
+func confirmPendingAction(deps Dependencies) gin.HandlerFunc {
+	type request struct {
+		PendingID string `json:"pending_id" binding:"required"`
+	}
+	return func(c *gin.Context) {
+		var input request
+		if err := c.ShouldBindJSON(&input); err != nil {
+			respondError(c, http.StatusBadRequest, "invalid_request", "Укажите pending_id")
+			return
+		}
+		session := c.MustGet("session").(domain.Session)
+
+		action, err := deps.PendingActions.GetPendingAction(c.Request.Context(), input.PendingID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				respondError(c, http.StatusNotFound, "pending_action_not_found", "Черновик не найден или истёк")
+				return
+			}
+			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось получить черновик")
+			return
+		}
+
+		if action.UserID != session.UserID {
+			respondError(c, http.StatusForbidden, "forbidden", "Черновик принадлежит другому пользователю")
+			return
+		}
+
+		if action.Status != "pending" {
+			respondError(c, http.StatusConflict, "pending_action_invalid", "Черновик уже обработан или отменён")
+			return
+		}
+
+		if deps.Now().Sub(action.CreatedAt) > time.Duration(action.ExpiresIn)*time.Second {
+			respondError(c, http.StatusGone, "pending_action_expired", "Срок действия черновика истёк")
+			return
+		}
+
+		// Execute the action
+		var result any
+		status := http.StatusOK
+		switch action.Action {
+		case "create_access_ticket":
+			system, _ := action.Payload["system"].(string)
+			if system == "" {
+				respondError(c, http.StatusBadRequest, "invalid_payload", "Отсутствует система в payload")
+				return
+			}
+			ticket, created, err := deps.Tickets.CreateOrGet(c.Request.Context(), session.UserID, system)
+			if err != nil {
+				respondError(c, http.StatusServiceUnavailable, "ticket_unavailable", "Не удалось создать заявку")
+				return
+			}
+			ticket.Existing = !created
+			if created {
+				status = http.StatusCreated
+			}
+			result = ticket
+		case "notify_mentor":
+			message, _ := action.Payload["message"].(string)
+			if message == "" {
+				respondError(c, http.StatusBadRequest, "invalid_payload", "Отсутствует сообщение в payload")
+				return
+			}
+			notification, err := deps.Notifier.Notify(c.Request.Context(), session.UserID, message, "")
+			if err != nil {
+				respondError(c, http.StatusServiceUnavailable, "notification_unavailable", "Не удалось отправить уведомление")
+				return
+			}
+			result = notification
+			status = http.StatusOK
+		default:
+			respondError(c, http.StatusUnprocessableEntity, "unsupported_action", "Неизвестное действие")
+			return
+		}
+
+		if err := deps.PendingActions.UpdatePendingActionStatus(c.Request.Context(), input.PendingID, "confirmed"); err != nil {
+			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось обновить статус черновика")
+			return
+		}
+
+		c.JSON(status, result)
+	}
+}
+
+func cancelPendingAction(deps Dependencies) gin.HandlerFunc {
+	type request struct {
+		PendingID string `json:"pending_id" binding:"required"`
+	}
+	return func(c *gin.Context) {
+		var input request
+		if err := c.ShouldBindJSON(&input); err != nil {
+			respondError(c, http.StatusBadRequest, "invalid_request", "Укажите pending_id")
+			return
+		}
+		session := c.MustGet("session").(domain.Session)
+
+		action, err := deps.PendingActions.GetPendingAction(c.Request.Context(), input.PendingID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				respondError(c, http.StatusNotFound, "pending_action_not_found", "Черновик не найден или истёк")
+				return
+			}
+			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось получить черновик")
+			return
+		}
+
+		if action.UserID != session.UserID {
+			respondError(c, http.StatusForbidden, "forbidden", "Черновик принадлежит другому пользователю")
+			return
+		}
+
+		if err := deps.PendingActions.UpdatePendingActionStatus(c.Request.Context(), input.PendingID, "cancelled"); err != nil {
+			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось отменить черновик")
+			return
+		}
+
+		c.Status(http.StatusNoContent)
+	}
+}
+
+func generatePendingID() string {
+	bytes := make([]byte, 16)
+	_, _ = rand.Read(bytes)
+	return "p_" + hex.EncodeToString(bytes)
 }
 
 func proxyAI(deps Dependencies, path string) gin.HandlerFunc {
@@ -349,6 +532,16 @@ func proxyAI(deps Dependencies, path string) gin.HandlerFunc {
 		session := c.MustGet("session").(domain.Session)
 		request.Header.Set("X-User-ID", session.UserID)
 		request.Header.Set("X-User-Role", string(session.Role))
+		if deps.InternalToken != "" {
+			request.Header.Set("X-Internal-Token", deps.InternalToken)
+		}
+		if deps.RequestContextSecret != "" {
+			ctxPayload := session.UserID + "|" + string(session.Role) + "|" + time.Now().UTC().Format(time.RFC3339)
+			h := hmac.New(sha256.New, []byte(deps.RequestContextSecret))
+			h.Write([]byte(ctxPayload))
+			signature := hex.EncodeToString(h.Sum(nil))
+			request.Header.Set("X-Request-Context", ctxPayload+"."+signature)
+		}
 		client := deps.HTTPClient
 		if client == nil {
 			client = http.DefaultClient

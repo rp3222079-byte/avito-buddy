@@ -32,7 +32,7 @@ func TestMockStoreFiltersTasksAndResolvesMentor(t *testing.T) {
 	if len(tasks) != 1 || tasks[0].ID != "AVT-1" {
 		t.Fatalf("tasks = %#v", tasks)
 	}
-	notification, err := store.Notify(context.Background(), "intern_ivan", "Помогите")
+	notification, err := store.Notify(context.Background(), "intern_ivan", "Помогите", "")
 	if err != nil {
 		t.Fatal(err)
 	}

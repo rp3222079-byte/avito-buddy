@@ -43,11 +43,14 @@ type Intern struct {
 }
 
 type Ticket struct {
-	TicketID string `json:"ticket_id"`
-	UserID   string `json:"-"`
-	System   string `json:"-"`
-	Status   string `json:"status"`
-	SLAHours int    `json:"sla_hours"`
+	RequestID   string `json:"request_id"`
+	UserID      string `json:"-"`
+	System      string `json:"system"`
+	AccessLevel string `json:"access_level,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	Status      string `json:"status"`
+	SLAHours    int    `json:"sla_hours"`
+	Existing    bool   `json:"existing"`
 }
 
 type Notification struct {
@@ -58,4 +61,23 @@ type Notification struct {
 type BriefingClaim struct {
 	ShouldSend bool   `json:"should_send"`
 	Date       string `json:"date"`
+}
+
+type PendingAction struct {
+	PendingID   string                 `json:"pending_id"`
+	Action      string                 `json:"action"`
+	Status      string                 `json:"status"`
+	ExpiresIn   int                    `json:"expires_in_seconds"`
+	Payload     map[string]any         `json:"payload"`
+	UserID      string                 `json:"-"`
+	CreatedAt   time.Time              `json:"-"`
+}
+
+type PendingActionRequest struct {
+	Action  string         `json:"action" binding:"required"`
+	Payload map[string]any `json:"payload" binding:"required"`
+}
+
+type ConfirmActionRequest struct {
+	PendingID string `json:"pending_id" binding:"required"`
 }

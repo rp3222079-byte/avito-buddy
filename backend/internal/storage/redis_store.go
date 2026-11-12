@@ -13,11 +13,17 @@ import (
 )
 
 type RedisStore struct {
-	client *redis.Client
+	client  *redis.Client
+	nowFunc func() time.Time
 }
 
 func NewRedisStore(client *redis.Client) *RedisStore {
-	return &RedisStore{client: client}
+	return &RedisStore{client: client, nowFunc: time.Now}
+}
+
+func (s *RedisStore) WithNowFunc(f func() time.Time) *RedisStore {
+	s.nowFunc = f
+	return s
 }
 
 func (s *RedisStore) Create(ctx context.Context, session domain.Session, ttl time.Duration) (string, error) {
@@ -60,12 +66,55 @@ func (s *RedisStore) Status(ctx context.Context, userID string, date string) (bo
 	return count > 0, err
 }
 
-func (s *RedisStore) Claim(ctx context.Context, userID string, date string, ttl time.Duration, force bool) (bool, error) {
+func (s *RedisStore) Claim(ctx context.Context, userID string, date string, ttl time.Duration) (bool, error) {
 	key := briefingKey(userID, date)
-	if force {
-		return true, s.client.Set(ctx, key, "sent", ttl).Err()
-	}
 	return s.client.SetNX(ctx, key, "sent", ttl).Result()
+}
+
+func (s *RedisStore) CreatePendingAction(ctx context.Context, action *domain.PendingAction) error {
+	data, err := json.Marshal(action)
+	if err != nil {
+		return err
+	}
+	expiresAt := action.CreatedAt.Add(time.Duration(action.ExpiresIn) * time.Second)
+	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	return s.client.Set(ctx, "pending:"+action.PendingID, data, ttl).Err()
+}
+
+func (s *RedisStore) GetPendingAction(ctx context.Context, pendingID string) (*domain.PendingAction, error) {
+	data, err := s.client.Get(ctx, "pending:"+pendingID).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var action domain.PendingAction
+	if err := json.Unmarshal(data, &action); err != nil {
+		return nil, err
+	}
+	// Check expiration using the store's time source
+	expiresAt := action.CreatedAt.Add(time.Duration(action.ExpiresIn) * time.Second)
+	if s.nowFunc().After(expiresAt) {
+		return nil, domain.ErrNotFound
+	}
+	return &action, nil
+}
+
+func (s *RedisStore) UpdatePendingActionStatus(ctx context.Context, pendingID, status string) error {
+	action, err := s.GetPendingAction(ctx, pendingID)
+	if err != nil {
+		return err
+	}
+	action.Status = status
+	return s.CreatePendingAction(ctx, action)
+}
+
+func (s *RedisStore) DeletePendingAction(ctx context.Context, pendingID string) error {
+	return s.client.Del(ctx, "pending:"+pendingID).Err()
 }
 
 func briefingKey(userID string, date string) string {

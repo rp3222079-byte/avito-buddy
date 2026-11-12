@@ -17,16 +17,16 @@ func TestPostgresTicketStoreReturnsExistingTicketAfterUniqueConflict(t *testing.
 	defer database.Close()
 	insert := database.ExpectQuery(regexp.QuoteMeta("INSERT INTO access_tickets"))
 	insert.WithArgs("intern_ivan", "confluence")
-	insert.WillReturnRows(pgxmock.NewRows([]string{"ticket_id", "user_id", "system", "status", "sla_hours"}))
+	insert.WillReturnRows(pgxmock.NewRows([]string{"request_id", "user_id", "system", "access_level", "reason", "status", "sla_hours"}))
 	selectExisting := database.ExpectQuery(regexp.QuoteMeta("SELECT 'IT-' || LPAD(id::text, 3, '0')"))
 	selectExisting.WithArgs("intern_ivan", "confluence")
-	selectExisting.WillReturnRows(pgxmock.NewRows([]string{"ticket_id", "user_id", "system", "status", "sla_hours"}).AddRow("IT-123", "intern_ivan", "confluence", "pending", 2))
+	selectExisting.WillReturnRows(pgxmock.NewRows([]string{"request_id", "user_id", "system", "access_level", "reason", "status", "sla_hours"}).AddRow("IT-123", "intern_ivan", "confluence", "read", "", "pending", 2))
 
 	ticket, created, err := storage.NewPostgresTicketStore(database).CreateOrGet(context.Background(), "intern_ivan", "confluence")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created || ticket.TicketID != "IT-123" {
+	if created || ticket.RequestID != "IT-123" {
 		t.Fatalf("ticket=%#v created=%v", ticket, created)
 	}
 	if err := database.ExpectationsWereMet(); err != nil {

@@ -29,16 +29,17 @@ func TestRedisStorePersistsSessionsAndClaimsBriefingAtomically(t *testing.T) {
 		t.Fatalf("session = %#v", session)
 	}
 
-	first, err := store.Claim(ctx, "intern_ivan", "2026-11-11", 48*time.Hour, false)
+	first, err := store.Claim(ctx, "intern_ivan", "2026-11-11", 48*time.Hour)
 	if err != nil || !first {
 		t.Fatalf("first claim = %v, err=%v", first, err)
 	}
-	second, err := store.Claim(ctx, "intern_ivan", "2026-11-11", 48*time.Hour, false)
+	second, err := store.Claim(ctx, "intern_ivan", "2026-11-11", 48*time.Hour)
 	if err != nil || second {
 		t.Fatalf("second claim = %v, err=%v", second, err)
 	}
-	forced, err := store.Claim(ctx, "intern_ivan", "2026-11-11", 48*time.Hour, true)
-	if err != nil || !forced {
-		t.Fatalf("forced claim = %v, err=%v", forced, err)
+	// No force parameter anymore - just test that it works
+	third, err := store.Claim(ctx, "intern_ivan", "2026-11-12", 48*time.Hour)
+	if err != nil || !third {
+		t.Fatalf("third claim = %v, err=%v", third, err)
 	}
 }

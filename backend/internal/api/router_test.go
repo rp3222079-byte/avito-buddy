@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,11 +16,14 @@ import (
 
 type memorySessions struct {
 	values map[string]domain.Session
+	counter int
 }
 
 func (s *memorySessions) Create(_ context.Context, session domain.Session, _ time.Duration) (string, error) {
-	s.values["session-1"] = session
-	return "session-1", nil
+	s.counter++
+	id := fmt.Sprintf("session-%d", s.counter)
+	s.values[id] = session
+	return id, nil
 }
 
 func (s *memorySessions) Get(_ context.Context, id string) (domain.Session, error) {
@@ -66,14 +70,24 @@ func (s *memoryTickets) CreateOrGet(_ context.Context, userID string, system str
 	if ticket, ok := s.byKey[key]; ok {
 		return ticket, false, nil
 	}
-	ticket := domain.Ticket{TicketID: "IT-123", UserID: userID, System: system, Status: "pending", SLAHours: 2}
+	ticket := domain.Ticket{RequestID: "IT-123", UserID: userID, System: system, AccessLevel: "read", Status: "pending", SLAHours: 2}
 	s.byKey[key] = ticket
 	return ticket, true, nil
 }
 
-type memoryNotifier struct{}
+type memoryNotifier struct {
+	sent map[string]domain.Notification
+}
 
-func (memoryNotifier) Notify(_ context.Context, userID string, message string) (domain.Notification, error) {
+func (m *memoryNotifier) Notify(_ context.Context, userID string, message string, idempotencyKey string) (domain.Notification, error) {
+	if idempotencyKey != "" {
+		if notif, ok := m.sent[idempotencyKey]; ok {
+			return notif, nil
+		}
+		notification := domain.Notification{Status: "sent", MentorName: "Алексей Смит"}
+		m.sent[idempotencyKey] = notification
+		return notification, nil
+	}
 	if userID != "intern_ivan" || message == "" {
 		return domain.Notification{}, domain.ErrNotFound
 	}
@@ -88,16 +102,51 @@ func (s *memoryBriefings) Status(_ context.Context, userID string, date string) 
 	return s.sent[userID+":"+date], nil
 }
 
-func (s *memoryBriefings) Claim(_ context.Context, userID string, date string, _ time.Duration, force bool) (bool, error) {
+func (s *memoryBriefings) Claim(_ context.Context, userID string, date string, _ time.Duration) (bool, error) {
 	key := userID + ":" + date
-	if s.sent[key] && !force {
+	if s.sent[key] {
 		return false, nil
 	}
 	s.sent[key] = true
 	return true, nil
 }
 
+type memoryPendingActions struct {
+	actions map[string]*domain.PendingAction
+}
+
+func (m *memoryPendingActions) CreatePendingAction(_ context.Context, action *domain.PendingAction) error {
+	m.actions[action.PendingID] = action
+	return nil
+}
+
+func (m *memoryPendingActions) GetPendingAction(_ context.Context, pendingID string) (*domain.PendingAction, error) {
+	action, ok := m.actions[pendingID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return action, nil
+}
+
+func (m *memoryPendingActions) UpdatePendingActionStatus(_ context.Context, pendingID, status string) error {
+	if action, ok := m.actions[pendingID]; ok {
+		action.Status = status
+	}
+	return nil
+}
+
+func (m *memoryPendingActions) DeletePendingAction(_ context.Context, pendingID string) error {
+	delete(m.actions, pendingID)
+	return nil
+}
+
 func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
+	fixedTime := time.Date(2026, time.November, 11, 9, 0, 0, 0, time.UTC)
+	mocks := &memoryTickets{byKey: make(map[string]domain.Ticket)}
+	notifier := &memoryNotifier{sent: make(map[string]domain.Notification)}
+	briefings := &memoryBriefings{sent: make(map[string]bool)}
+	pendingActions := &memoryPendingActions{actions: make(map[string]*domain.PendingAction)}
+
 	deps := api.Dependencies{
 		Sessions: &memorySessions{values: make(map[string]domain.Session)},
 		Tasks: memoryTasks{tasks: []domain.Task{
@@ -107,15 +156,19 @@ func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
 		Mentors: memoryMentors{interns: map[string][]domain.Intern{
 			"mentor_smith": {{InternID: "intern_ivan", Name: "Иван Иванов", ProgressPercent: 55, Status: "blocked"}},
 		}},
-		Tickets:    &memoryTickets{byKey: make(map[string]domain.Ticket)},
-		Notifier:   memoryNotifier{},
-		Briefings:  &memoryBriefings{sent: make(map[string]bool)},
-		SessionTTL: 24 * time.Hour,
+		Tickets:         mocks,
+		Notifier:        notifier,
+		Briefings:       briefings,
+		PendingActions:  pendingActions,
+		SessionTTL:      24 * time.Hour,
+		BriefingTTL:     48 * time.Hour,
+		PendingActionTTL: 10 * time.Minute,
 		Now: func() time.Time {
-			return time.Date(2026, time.November, 11, 9, 0, 0, 0, time.UTC)
+			return fixedTime
 		},
 		AllowedIdentities: map[string]domain.Role{
 			"intern_ivan":  domain.RoleIntern,
+			"intern_anna":  domain.RoleIntern,
 			"mentor_smith": domain.RoleMentor,
 		},
 	}
@@ -313,7 +366,7 @@ func TestRepeatedAccessRequestReturnsExistingTicket(t *testing.T) {
 	if secondStatus != http.StatusOK {
 		t.Fatalf("second status = %d, want %d", secondStatus, http.StatusOK)
 	}
-	if first.TicketID != second.TicketID {
+	if first.RequestID != second.RequestID {
 		t.Fatalf("tickets = %#v and %#v", first, second)
 	}
 }
@@ -338,11 +391,39 @@ func TestNotificationUsesMentorFromSession(t *testing.T) {
 	}
 }
 
-func TestBriefingClaimPreventsDuplicateButForceBypassesFlag(t *testing.T) {
+func TestNotificationIdempotency(t *testing.T) {
+	router := newRouter()
+	request := httptest.NewRequest(http.MethodPost, "/api/notify-mentor", strings.NewReader(`{"message":"Нужна помощь","idempotency_key":"test-key-1"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(login(t, router, "intern_ivan", domain.RoleIntern))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("first status = %d", response.Code)
+	}
+
+	// Second request with same idempotency key
+	request2 := httptest.NewRequest(http.MethodPost, "/api/notify-mentor", strings.NewReader(`{"message":"Другое сообщение","idempotency_key":"test-key-1"}`))
+	request2.Header.Set("Content-Type", "application/json")
+	request2.AddCookie(login(t, router, "intern_ivan", domain.RoleIntern))
+	response2 := httptest.NewRecorder()
+	router.ServeHTTP(response2, request2)
+
+	if response2.Code != http.StatusOK {
+		t.Fatalf("second status = %d", response2.Code)
+	}
+	// Should return same result
+	if response.Body.String() != response2.Body.String() {
+		t.Fatalf("idempotency failed: %s vs %s", response.Body.String(), response2.Body.String())
+	}
+}
+
+func TestBriefingClaimPreventsDuplicate(t *testing.T) {
 	router := newRouter()
 	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
-	claim := func(force bool) domain.BriefingClaim {
-		request := httptest.NewRequest(http.MethodPost, "/api/briefing/claim", strings.NewReader(`{"force":`+map[bool]string{true: "true", false: "false"}[force]+`}`))
+	claim := func() domain.BriefingClaim {
+		request := httptest.NewRequest(http.MethodPost, "/api/briefing/claim", nil)
 		request.Header.Set("Content-Type", "application/json")
 		request.AddCookie(cookie)
 		response := httptest.NewRecorder()
@@ -357,14 +438,180 @@ func TestBriefingClaimPreventsDuplicateButForceBypassesFlag(t *testing.T) {
 		return body
 	}
 
-	if first := claim(false); !first.ShouldSend || first.Date != "2026-11-11" {
+	if first := claim(); !first.ShouldSend || first.Date != "2026-11-11" {
 		t.Fatalf("first claim = %#v", first)
 	}
-	if second := claim(false); second.ShouldSend {
+	if second := claim(); second.ShouldSend {
 		t.Fatalf("second claim = %#v", second)
 	}
-	if forced := claim(true); !forced.ShouldSend {
-		t.Fatalf("forced claim = %#v", forced)
+}
+
+func TestCreatePendingAction(t *testing.T) {
+	router := newRouter()
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/pending-action", strings.NewReader(`{"action":"create_access_ticket","payload":{"system":"confluence","access_level":"read","reason":"For tasks"}}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	var body struct {
+		PendingID       string         `json:"pending_id"`
+		Action          string         `json:"action"`
+		Status          string         `json:"status"`
+		ExpiresInSeconds int           `json:"expires_in_seconds"`
+		Payload         map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.PendingID == "" || body.Action != "create_access_ticket" || body.Status != "pending" {
+		t.Fatalf("invalid response: %#v", body)
+	}
+}
+
+func TestConfirmPendingActionCreatesTicket(t *testing.T) {
+	router := newRouter()
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+
+	// Create pending action
+	createReq := httptest.NewRequest(http.MethodPost, "/api/pending-action", strings.NewReader(`{"action":"create_access_ticket","payload":{"system":"confluence"}}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(cookie)
+	createResp := httptest.NewRecorder()
+	router.ServeHTTP(createResp, createReq)
+
+	var createBody struct {
+		PendingID string `json:"pending_id"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createBody); err != nil {
+		t.Fatal(err)
+	}
+
+	// Confirm it
+	confirmReq := httptest.NewRequest(http.MethodPost, "/api/pending-action/confirm", strings.NewReader(`{"pending_id":"`+createBody.PendingID+`"}`))
+	confirmReq.Header.Set("Content-Type", "application/json")
+	confirmReq.AddCookie(cookie)
+	confirmResp := httptest.NewRecorder()
+	router.ServeHTTP(confirmResp, confirmReq)
+
+	if confirmResp.Code != http.StatusCreated {
+		t.Fatalf("confirm status = %d, want %d; body=%s", confirmResp.Code, http.StatusCreated, confirmResp.Body.String())
+	}
+	var ticket domain.Ticket
+	if err := json.Unmarshal(confirmResp.Body.Bytes(), &ticket); err != nil {
+		t.Fatal(err)
+	}
+	if ticket.RequestID == "" || ticket.System != "confluence" {
+		t.Fatalf("invalid ticket: %#v", ticket)
+	}
+}
+
+func TestConfirmPendingActionRejectsExpired(t *testing.T) {
+	router := newRouterWith(func(deps *api.Dependencies) {
+		deps.PendingActionTTL = -1 * time.Hour // Expired
+	})
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+
+	// Create pending action
+	createReq := httptest.NewRequest(http.MethodPost, "/api/pending-action", strings.NewReader(`{"action":"create_access_ticket","payload":{"system":"confluence"}}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(cookie)
+	createResp := httptest.NewRecorder()
+	router.ServeHTTP(createResp, createReq)
+
+	var createBody struct {
+		PendingID string `json:"pending_id"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createBody); err != nil {
+		t.Fatal(err)
+	}
+
+	// Confirm expired action
+	confirmReq := httptest.NewRequest(http.MethodPost, "/api/pending-action/confirm", strings.NewReader(`{"pending_id":"`+createBody.PendingID+`"}`))
+	confirmReq.Header.Set("Content-Type", "application/json")
+	confirmReq.AddCookie(cookie)
+	confirmResp := httptest.NewRecorder()
+	router.ServeHTTP(confirmResp, confirmReq)
+
+	if confirmResp.Code != http.StatusGone {
+		t.Fatalf("status = %d, want %d", confirmResp.Code, http.StatusGone)
+	}
+}
+
+func TestConfirmPendingActionRejectsWrongUser(t *testing.T) {
+	router := newRouter()
+	cookie1 := login(t, router, "intern_ivan", domain.RoleIntern)
+	cookie2 := login(t, router, "intern_anna", domain.RoleIntern)
+
+	// Create pending action as ivan
+	createReq := httptest.NewRequest(http.MethodPost, "/api/pending-action", strings.NewReader(`{"action":"create_access_ticket","payload":{"system":"confluence"}}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(cookie1)
+	createResp := httptest.NewRecorder()
+	router.ServeHTTP(createResp, createReq)
+
+	var createBody struct {
+		PendingID string `json:"pending_id"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createBody); err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to confirm as anna
+	confirmReq := httptest.NewRequest(http.MethodPost, "/api/pending-action/confirm", strings.NewReader(`{"pending_id":"`+createBody.PendingID+`"}`))
+	confirmReq.Header.Set("Content-Type", "application/json")
+	confirmReq.AddCookie(cookie2)
+	confirmResp := httptest.NewRecorder()
+	router.ServeHTTP(confirmResp, confirmReq)
+
+	if confirmResp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", confirmResp.Code, http.StatusForbidden)
+	}
+}
+
+func TestCancelPendingAction(t *testing.T) {
+	router := newRouter()
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+
+	// Create pending action
+	createReq := httptest.NewRequest(http.MethodPost, "/api/pending-action", strings.NewReader(`{"action":"create_access_ticket","payload":{"system":"confluence"}}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(cookie)
+	createResp := httptest.NewRecorder()
+	router.ServeHTTP(createResp, createReq)
+
+	var createBody struct {
+		PendingID string `json:"pending_id"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createBody); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cancel it
+	cancelReq := httptest.NewRequest(http.MethodPost, "/api/pending-action/cancel", strings.NewReader(`{"pending_id":"`+createBody.PendingID+`"}`))
+	cancelReq.Header.Set("Content-Type", "application/json")
+	cancelReq.AddCookie(cookie)
+	cancelResp := httptest.NewRecorder()
+	router.ServeHTTP(cancelResp, cancelReq)
+
+	if cancelResp.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", cancelResp.Code, http.StatusNoContent)
+	}
+
+	// Try to confirm cancelled action
+	confirmReq := httptest.NewRequest(http.MethodPost, "/api/pending-action/confirm", strings.NewReader(`{"pending_id":"`+createBody.PendingID+`"}`))
+	confirmReq.Header.Set("Content-Type", "application/json")
+	confirmReq.AddCookie(cookie)
+	confirmResp := httptest.NewRecorder()
+	router.ServeHTTP(confirmResp, confirmReq)
+
+	if confirmResp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", confirmResp.Code, http.StatusConflict)
 	}
 }
 
