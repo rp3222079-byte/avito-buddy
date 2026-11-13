@@ -49,7 +49,8 @@ type BriefingStore interface {
 type PendingActionStore interface {
 	CreatePendingAction(context.Context, *domain.PendingAction) error
 	GetPendingAction(context.Context, string) (*domain.PendingAction, error)
-	UpdatePendingActionStatus(context.Context, string, string) error
+	ClaimPendingAction(context.Context, string, string) (*domain.PendingAction, error)
+	TransitionPendingActionStatus(context.Context, string, string, string, string) error
 	DeletePendingAction(context.Context, string) error
 }
 
@@ -295,7 +296,7 @@ func createTicket(store TicketStore) gin.HandlerFunc {
 
 func notifyMentor(notifier Notifier) gin.HandlerFunc {
 	type request struct {
-		Message       string `json:"message" binding:"required,max=1000"`
+		Message        string `json:"message" binding:"required,max=1000"`
 		IdempotencyKey string `json:"idempotency_key,omitempty"`
 	}
 	return func(c *gin.Context) {
@@ -366,13 +367,13 @@ func createPendingAction(deps Dependencies) gin.HandlerFunc {
 		}
 
 		action := &domain.PendingAction{
-			PendingID:  pendingID,
-			Action:     input.Action,
-			Status:     "pending",
-			ExpiresIn:  expiresIn,
-			Payload:    input.Payload,
-			UserID:     session.UserID,
-			CreatedAt:  now,
+			PendingID: pendingID,
+			Action:    input.Action,
+			Status:    "pending",
+			ExpiresIn: expiresIn,
+			Payload:   input.Payload,
+			UserID:    session.UserID,
+			CreatedAt: now,
 		}
 
 		if err := deps.PendingActions.CreatePendingAction(c.Request.Context(), action); err != nil {
@@ -381,11 +382,11 @@ func createPendingAction(deps Dependencies) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusCreated, gin.H{
-			"pending_id":       pendingID,
-			"action":           input.Action,
-			"status":           "pending",
+			"pending_id":         pendingID,
+			"action":             input.Action,
+			"status":             "pending",
 			"expires_in_seconds": expiresIn,
-			"payload":          input.Payload,
+			"payload":            input.Payload,
 		})
 	}
 }
@@ -421,9 +422,32 @@ func confirmPendingAction(deps Dependencies) gin.HandlerFunc {
 			respondError(c, http.StatusConflict, "pending_action_invalid", "Черновик уже обработан или отменён")
 			return
 		}
+		// Validate before claiming so malformed payloads do not remain stuck in processing.
+		switch action.Action {
+		case "create_access_ticket":
+			if system, _ := action.Payload["system"].(string); system == "" {
+				respondError(c, http.StatusBadRequest, "invalid_payload", "Отсутствует система в payload")
+				return
+			}
+		case "notify_mentor":
+			if message, _ := action.Payload["message"].(string); message == "" {
+				respondError(c, http.StatusBadRequest, "invalid_payload", "Отсутствует сообщение в payload")
+				return
+			}
+		default:
+			respondError(c, http.StatusUnprocessableEntity, "unsupported_action", "Неизвестное действие")
+			return
+		}
 
 		if deps.Now().Sub(action.CreatedAt) > time.Duration(action.ExpiresIn)*time.Second {
 			respondError(c, http.StatusGone, "pending_action_expired", "Срок действия черновика истёк")
+			return
+		}
+
+		// Claim the action atomically before performing any external side effect.
+		action, err = deps.PendingActions.ClaimPendingAction(c.Request.Context(), input.PendingID, session.UserID)
+		if err != nil {
+			handlePendingActionTransitionError(c, err, "Не удалось захватить черновик")
 			return
 		}
 
@@ -453,7 +477,9 @@ func confirmPendingAction(deps Dependencies) gin.HandlerFunc {
 				respondError(c, http.StatusBadRequest, "invalid_payload", "Отсутствует сообщение в payload")
 				return
 			}
-			notification, err := deps.Notifier.Notify(c.Request.Context(), session.UserID, message, "")
+			// A stable key prevents duplicate delivery if status persistence fails and
+			// the same operation is retried by an idempotent notification provider.
+			notification, err := deps.Notifier.Notify(c.Request.Context(), session.UserID, message, input.PendingID)
 			if err != nil {
 				respondError(c, http.StatusServiceUnavailable, "notification_unavailable", "Не удалось отправить уведомление")
 				return
@@ -465,8 +491,8 @@ func confirmPendingAction(deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		if err := deps.PendingActions.UpdatePendingActionStatus(c.Request.Context(), input.PendingID, "confirmed"); err != nil {
-			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось обновить статус черновика")
+		if err := deps.PendingActions.TransitionPendingActionStatus(c.Request.Context(), input.PendingID, session.UserID, "processing", "confirmed"); err != nil {
+			handlePendingActionTransitionError(c, err, "Не удалось сохранить результат действия")
 			return
 		}
 
@@ -501,12 +527,25 @@ func cancelPendingAction(deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		if err := deps.PendingActions.UpdatePendingActionStatus(c.Request.Context(), input.PendingID, "cancelled"); err != nil {
-			respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", "Не удалось отменить черновик")
+		if err := deps.PendingActions.TransitionPendingActionStatus(c.Request.Context(), input.PendingID, session.UserID, "pending", "cancelled"); err != nil {
+			handlePendingActionTransitionError(c, err, "Не удалось отменить черновик")
 			return
 		}
 
 		c.Status(http.StatusNoContent)
+	}
+}
+
+func handlePendingActionTransitionError(c *gin.Context, err error, message string) {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		respondError(c, http.StatusNotFound, "pending_action_not_found", "Черновик не найден или истёк")
+	case errors.Is(err, domain.ErrForbidden):
+		respondError(c, http.StatusForbidden, "forbidden", "Черновик принадлежит другому пользователю")
+	case errors.Is(err, domain.ErrConflict):
+		respondError(c, http.StatusConflict, "pending_action_invalid", "Черновик уже обрабатывается или обработан")
+	default:
+		respondError(c, http.StatusServiceUnavailable, "pending_action_unavailable", message)
 	}
 }
 
