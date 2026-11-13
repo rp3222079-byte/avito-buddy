@@ -1,0 +1,519 @@
+openapi: 3.1.0
+info:
+  title: Avito Buddy API
+  version: 1.0.0
+  description: Публичный Go API для frontend и внутренний контракт RAG-сервиса.
+servers:
+  - url: http://localhost:8080
+    description: Go Backend
+tags:
+  - name: session
+  - name: jira
+  - name: mentor
+  - name: briefing
+  - name: chat
+  - name: pending-action
+  - name: rag
+paths:
+  /health:
+    get:
+      operationId: backendHealth
+      responses:
+        "200":
+          description: Backend запущен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /api/session:
+    post:
+      tags: [session]
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionRequest"
+      responses:
+        "201":
+          description: Сессия создана; cookie `avito_buddy_session` установлена.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [session]
+      operationId: deleteSession
+      security:
+        - cookieAuth: []
+      responses:
+        "204":
+          description: Сессия удалена
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/jira/tasks:
+    get:
+      tags: [jira]
+      operationId: getJiraTasks
+      description: Возвращает задачи пользователя из доверенной сессии.
+      security:
+        - cookieAuth: []
+        - internalToken: []
+      parameters:
+        - $ref: "#/components/parameters/InternalUserID"
+        - $ref: "#/components/parameters/InternalUserRole"
+      responses:
+        "200":
+          description: Список задач, включая пустой список
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tasks]
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/jira/ticket:
+    post:
+      tags: [jira]
+      operationId: createAccessTicket
+      security:
+        - cookieAuth: []
+        - internalToken: []
+      parameters:
+        - $ref: "#/components/parameters/InternalUserID"
+        - $ref: "#/components/parameters/InternalUserRole"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [system]
+              properties:
+                system:
+                  type: string
+                  enum: [confluence, jira, figma, github]
+      responses:
+        "201":
+          description: Тикет создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "200":
+          description: Ранее созданный тикет
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/notify-mentor:
+    post:
+      tags: [mentor]
+      operationId: notifyMentor
+      security:
+        - cookieAuth: []
+        - internalToken: []
+      parameters:
+        - $ref: "#/components/parameters/InternalUserID"
+        - $ref: "#/components/parameters/InternalUserRole"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, minLength: 1, maxLength: 1000 }
+                idempotency_key: { type: string }
+      responses:
+        "200":
+          description: Уведомление принято
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/mentor/interns:
+    get:
+      tags: [mentor]
+      operationId: getMentorInterns
+      security:
+        - cookieAuth: []
+        - internalToken: []
+      parameters:
+        - $ref: "#/components/parameters/InternalUserID"
+        - $ref: "#/components/parameters/InternalUserRole"
+      responses:
+        "200":
+          description: Только стажёры текущего наставника
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [interns]
+                properties:
+                  interns:
+                    type: array
+                    items: { $ref: "#/components/schemas/Intern" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/briefing/status:
+    get:
+      tags: [briefing]
+      operationId: getBriefingStatus
+      security:
+        - cookieAuth: []
+        - internalToken: []
+      responses:
+        "200":
+          description: Статус брифинга за текущую дату
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent, date]
+                properties:
+                  sent: { type: boolean }
+                  date: { type: string, format: date }
+  /api/briefing/claim:
+    post:
+      tags: [briefing]
+      operationId: claimBriefing
+      security:
+        - cookieAuth: []
+        - internalToken: []
+      responses:
+        "200":
+          description: Право отправить брифинг
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [should_send, date]
+                properties:
+                  should_send: { type: boolean }
+                  date: { type: string, format: date }
+  /api/pending-action:
+    post:
+      tags: [pending-action]
+      operationId: createPendingAction
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PendingActionRequest"
+      responses:
+        "201":
+          description: Черновик действия создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingActionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/pending-action/confirm:
+    post:
+      tags: [pending-action]
+      operationId: confirmPendingAction
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmActionRequest"
+      responses:
+        "200":
+          description: Действие выполнено, возвращается результат (Ticket или Notification)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Ticket"
+                  - $ref: "#/components/schemas/Notification"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+  /api/pending-action/cancel:
+    post:
+      tags: [pending-action]
+      operationId: cancelPendingAction
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmActionRequest"
+      responses:
+        "204":
+          description: Черновик отменён
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/chat:
+    post:
+      tags: [chat]
+      operationId: chat
+      security:
+        - cookieAuth: []
+      requestBody:
+        $ref: "#/components/requestBodies/ChatRequest"
+      responses:
+        "200":
+          description: Ответ AI-сервиса
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/chat/stream:
+    post:
+      tags: [chat]
+      operationId: streamChat
+      security:
+        - cookieAuth: []
+      requestBody:
+        $ref: "#/components/requestBodies/ChatRequest"
+      responses:
+        "200":
+          description: "SSE: события `token`, затем `done` или `error`."
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /rag/search:
+    servers:
+      - url: http://localhost:8001
+        description: RAG-service
+    post:
+      tags: [rag]
+      operationId: searchKnowledgeBase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: До четырёх релевантных чанков
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RAGResponse" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: avito_buddy_session
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+      description: Только для AI-service; вместе с `X-User-ID` и `X-User-Role`.
+  parameters:
+    InternalUserID:
+      name: X-User-ID
+      in: header
+      required: false
+      schema: { type: string }
+      description: Обязателен только при авторизации через `X-Internal-Token`.
+    InternalUserRole:
+      name: X-User-Role
+      in: header
+      required: false
+      schema: { type: string, enum: [intern, mentor] }
+      description: Обязателен только при авторизации через `X-Internal-Token`.
+  requestBodies:
+    ChatRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [message]
+            properties:
+              message: { type: string, minLength: 1 }
+              confirmed_action:
+                type: string
+                enum: [create_access_ticket, notify_mentor]
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
+    SessionRequest:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id: { type: string, example: intern_ivan }
+        role: { type: string, enum: [intern, mentor] }
+    Session:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id: { type: string }
+        role: { type: string, enum: [intern, mentor] }
+    Task:
+      type: object
+      required: [id, title, status, priority]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        description: { type: string }
+        type: { type: string }
+        created_at: { type: string, format: date }
+    Ticket:
+      type: object
+      required: [request_id, system, status, sla_hours]
+      properties:
+        request_id: { type: string, example: IT-123 }
+        system: { type: string, example: confluence }
+        access_level: { type: string, example: read }
+        reason: { type: string, example: "Для выполнения задач стажировки" }
+        status: { type: string, example: created }
+        sla_hours: { type: integer, example: 2 }
+        existing: { type: boolean }
+    Notification:
+      type: object
+      required: [status, mentor_name]
+      properties:
+        status: { type: string, const: sent }
+        mentor_name: { type: string }
+    Intern:
+      type: object
+      required: [intern_id, name, progress_percent, status, blockers]
+      properties:
+        intern_id: { type: string }
+        name: { type: string }
+        team: { type: string }
+        progress_percent: { type: integer, minimum: 0, maximum: 100 }
+        status: { type: string, enum: [blocked, at_risk, on_track] }
+        last_active: { type: string, format: date-time }
+        blockers:
+          type: array
+          items: { type: string }
+    PendingActionRequest:
+      type: object
+      required: [action, payload]
+      properties:
+        action:
+          type: string
+          enum: [create_access_ticket, notify_mentor]
+        payload:
+          type: object
+          required: [system]
+          properties:
+            system:
+              type: string
+              enum: [confluence, jira, figma, github]
+            access_level:
+              type: string
+              enum: [read, write, admin]
+            reason:
+              type: string
+              maxLength: 240
+            message:
+              type: string
+              maxLength: 1000
+    PendingActionResponse:
+      type: object
+      required: [pending_id, action, status, expires_in_seconds, payload]
+      properties:
+        pending_id: { type: string, example: p_abc123 }
+        action: { type: string, enum: [create_access_ticket, notify_mentor] }
+        status: { type: string, enum: [pending, confirmed, cancelled] }
+        expires_in_seconds: { type: integer, example: 600 }
+        payload: { type: object }
+    ConfirmActionRequest:
+      type: object
+      required: [pending_id]
+      properties:
+        pending_id: { type: string, example: p_abc123 }
+    RAGResult:
+      type: object
+      required: [text, source, score, chunk_id]
+      properties:
+        text: { type: string }
+        source: { type: string }
+        score: { type: number, minimum: 0, maximum: 1 }
+        chunk_id: { type: string }
+    RAGResponse:
+      type: object
+      required: [results, confident]
+      properties:
+        results:
+          type: array
+          maxItems: 4
+          items: { $ref: "#/components/schemas/RAGResult" }
+        confident: { type: boolean }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Нет действующей сессии
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Роль не имеет доступа
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Конфликт состояния
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Gone:
+      description: Ресурс истёк
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Ошибка валидации
+    Unavailable:
+      description: Зависимый сервис недоступен
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
