@@ -6,44 +6,67 @@
       "intern_id": "intern_ivan",
       "name": "Иван Иванов",
       "team": "Backend",
-      "progress_percent": 55,
+      "progress_percent": 29,
       "status": "blocked",
       "last_active": "2026-11-10T14:30:00",
       "blockers": [
-        "Ждет доступ к Confluence (заявка IT-123)",
-        "Застрял на задаче AVT-555 (Fix bug) из-за отсутствия логов"
+        "Blocker AVT-555 в IN_PROGRESS 10 дней, порог 1ч",
+        "Blocker AVT-562 в NOT_STARTED 4 дня, порог 1ч"
       ]
     },
     {
       "intern_id": "intern_anna",
       "name": "Анна Петрова",
       "team": "Frontend",
-      "progress_percent": 85,
-      "status": "on_track",
+      "progress_percent": 25,
+      "status": "at_risk",
       "last_active": "2026-11-10T09:15:00",
-      "blockers": []
+      "blockers": [
+        "Feature/High AVT-558 в IN_PROGRESS 11 дней, fallback baseline 8ч × 1.5 = 12ч"
+      ]
     },
     {
       "intern_id": "intern_oleg",
       "name": "Олег Смирнов",
       "team": "Backend",
-      "progress_percent": 70,
+      "progress_percent": 40,
       "status": "at_risk",
       "last_active": "2026-11-09T18:00:00",
       "blockers": [
-        "Нет доступа к Redis (база данных)"
+        "Task/High AVT-560 в IN_PROGRESS 9 дней, норма 8ч × 1.5 = 12ч",
+        "Testing/High AVT-561 в NOT_STARTED 5 дней, fallback baseline 8ч × 1.5 = 12ч"
       ]
     },
     {
       "intern_id": "intern_maria",
       "name": "Мария Козлова",
       "team": "Mobile (iOS)",
-      "progress_percent": 20,
-      "status": "blocked",
+      "progress_percent": 33,
+      "status": "at_risk",
       "last_active": "2026-11-10T11:00:00",
       "blockers": [
-        "Не может запустить Xcode",
-        "Не знает, как запросить доступ к дизайн-системе"
+        "Task/High AVT-569 в IN_PROGRESS 2 дня, норма 8ч × 1.5 = 12ч",
+        "Bug/Medium AVT-570 в NOT_STARTED 1 день, норма 6ч × 1.5 = 9ч"
+      ]
+    },
+    {
+      "intern_id": "intern_dmitry",
+      "name": "Дмитрий Соколов",
+      "team": "Backend",
+      "progress_percent": 67,
+      "status": "on_track",
+      "last_active": "2026-11-12T15:00:00",
+      "blockers": []
+    },
+    {
+      "intern_id": "intern_olga",
+      "name": "Ольга Новикова",
+      "team": "Mobile (iOS)",
+      "progress_percent": 50,
+      "status": "at_risk",
+      "last_active": "2026-11-11T16:00:00",
+      "blockers": [
+        "Documentation/Low AVT-574 в NOT_STARTED 3 дня, fallback baseline 8ч × 1.5 = 12ч"
       ]
     }
   ]
