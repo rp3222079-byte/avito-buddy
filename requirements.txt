@@ -1,0 +1,14 @@
+# AI-buddy AI-service (FastAPI + LLM tool calling)
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+openai>=1.68,<4.0
+
+# Calls to the Go backend and the separate RAG service
+httpx>=0.28,<1.0
+
+# Local environment configuration (for example, the LLM API key)
+python-dotenv>=1.0,<2.0
+
+# Conversation history limits and scheduled morning briefing
+tiktoken>=0.9,<1.0
+apscheduler>=3.11,<4.0
