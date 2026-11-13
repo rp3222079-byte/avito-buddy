@@ -39,6 +39,14 @@ cp ai-service/.env.example ai-service/.env
 .venv/bin/python -m uvicorn app.main:app --app-dir ai-service --reload --host 127.0.0.1 --port 8000
 ```
 
+Start the Backend and RAG dependencies in another terminal with
+`docker compose up --build postgres redis chromadb rag-service backend`. The
+AI process reads `BACKEND_BASE_URL`, `RAG_BASE_URL`, and `INTERNAL_TOKEN` from
+`ai-service/.env`; keep the token identical in the Compose environment. For a
+single-command stack, use `docker compose up --build` from the repository root.
+Ollama remains on the host and is reached from containers through
+`host.docker.internal`.
+
 Open `http://127.0.0.1:8000/docs` for the interactive API docs.
 
 ## Run tests
