@@ -1,0 +1,32 @@
+{
+  "flags": [
+    {
+      "task_id": "AVT-555",
+      "intern_id": "intern_ivan",
+      "stage": "IN_PROGRESS",
+      "severity": "high",
+      "reason": "Blocker в IN_PROGRESS 10 дней, порог 1ч"
+    },
+    {
+      "task_id": "AVT-562",
+      "intern_id": "intern_ivan",
+      "stage": "NOT_STARTED",
+      "severity": "high",
+      "reason": "Blocker в NOT_STARTED 4 дня, порог 1ч"
+    },
+    {
+      "task_id": "AVT-558",
+      "intern_id": "intern_anna",
+      "stage": "IN_PROGRESS",
+      "severity": "medium",
+      "reason": "Feature/High в IN_PROGRESS 11 дней, fallback baseline 8ч × 1.5 = 12ч"
+    },
+    {
+      "task_id": "AVT-560",
+      "intern_id": "intern_oleg",
+      "stage": "IN_PROGRESS",
+      "severity": "medium",
+      "reason": "Task/High в IN_PROGRESS 9 дней, норма 8ч × 1.5 = 12ч"
+    }
+  ]
+}
