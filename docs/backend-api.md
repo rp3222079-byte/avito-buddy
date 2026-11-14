@@ -28,6 +28,9 @@ export no_proxy=localhost,127.0.0.1
 
 ## MVP-эндпоинты скорборда и STUCK
 
+Подробная инструкция по архитектуре и ручной проверке находится в
+[`backend-mvp-13-11.md`](backend-mvp-13-11.md).
+
 - `POST /sync/jira` — возвращает результат мок-синхронизации и `updated: 4`.
 - `GET /scoreboard?week=...` — отдаёт `mock_scoreboard.json`; параметр недели игнорируется.
 - `GET /tasks/{id}/stages` — отдаёт переходы и длительности этапов в секундах.
