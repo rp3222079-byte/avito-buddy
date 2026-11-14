@@ -104,13 +104,71 @@ func (s *RedisStore) GetPendingAction(ctx context.Context, pendingID string) (*d
 	return &action, nil
 }
 
-func (s *RedisStore) UpdatePendingActionStatus(ctx context.Context, pendingID, status string) error {
-	action, err := s.GetPendingAction(ctx, pendingID)
-	if err != nil {
-		return err
+func (s *RedisStore) ClaimPendingAction(ctx context.Context, pendingID, userID string) (*domain.PendingAction, error) {
+	return s.transitionPendingActionStatus(ctx, pendingID, userID, "pending", "processing")
+}
+
+func (s *RedisStore) TransitionPendingActionStatus(ctx context.Context, pendingID, userID, from, to string) error {
+	_, err := s.transitionPendingActionStatus(ctx, pendingID, userID, from, to)
+	return err
+}
+
+func (s *RedisStore) transitionPendingActionStatus(ctx context.Context, pendingID, userID, from, to string) (*domain.PendingAction, error) {
+	key := "pending:" + pendingID
+	for attempt := 0; attempt < 8; attempt++ {
+		var updated *domain.PendingAction
+		err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+			data, err := tx.Get(ctx, key).Bytes()
+			if errors.Is(err, redis.Nil) {
+				return domain.ErrNotFound
+			}
+			if err != nil {
+				return err
+			}
+			var action domain.PendingAction
+			if err := json.Unmarshal(data, &action); err != nil {
+				return err
+			}
+			if action.UserID != userID {
+				return domain.ErrForbidden
+			}
+			if action.Status != from {
+				return domain.ErrConflict
+			}
+			if s.nowFunc().After(action.CreatedAt.Add(time.Duration(action.ExpiresIn) * time.Second)) {
+				return domain.ErrNotFound
+			}
+			ttl, err := tx.PTTL(ctx, key).Result()
+			if err != nil {
+				return err
+			}
+			if ttl <= 0 {
+				ttl = action.CreatedAt.Add(time.Duration(action.ExpiresIn) * time.Second).Sub(s.nowFunc())
+			}
+			if ttl <= 0 {
+				return domain.ErrNotFound
+			}
+			action.Status = to
+			updated = &action
+			encoded, err := json.Marshal(&action)
+			if err != nil {
+				return err
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, key, encoded, ttl)
+				return nil
+			})
+			return err
+		}, key)
+		if errors.Is(err, redis.TxFailedErr) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return updated, nil
 	}
-	action.Status = status
-	return s.CreatePendingAction(ctx, action)
+	return nil, domain.ErrConflict
 }
 
 func (s *RedisStore) DeletePendingAction(ctx context.Context, pendingID string) error {

@@ -14,6 +14,7 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     score_threshold: float
+    internal_token: str
 
 
 def load_settings() -> Settings:
@@ -32,4 +33,5 @@ def load_settings() -> Settings:
         chunk_size=int(os.getenv("RAG_CHUNK_SIZE", "800")),
         chunk_overlap=int(os.getenv("RAG_CHUNK_OVERLAP", "120")),
         score_threshold=float(os.getenv("RAG_SCORE_THRESHOLD", "0.72")),
+        internal_token=os.getenv("INTERNAL_TOKEN", ""),
     )

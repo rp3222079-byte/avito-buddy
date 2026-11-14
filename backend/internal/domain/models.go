@@ -6,6 +6,8 @@ import (
 )
 
 var ErrNotFound = errors.New("not found")
+var ErrForbidden = errors.New("forbidden")
+var ErrConflict = errors.New("conflict")
 
 type Role string
 
@@ -64,13 +66,13 @@ type BriefingClaim struct {
 }
 
 type PendingAction struct {
-	PendingID   string                 `json:"pending_id"`
-	Action      string                 `json:"action"`
-	Status      string                 `json:"status"`
-	ExpiresIn   int                    `json:"expires_in_seconds"`
-	Payload     map[string]any         `json:"payload"`
-	UserID      string                 `json:"-"`
-	CreatedAt   time.Time              `json:"-"`
+	PendingID string         `json:"pending_id"`
+	Action    string         `json:"action"`
+	Status    string         `json:"status"`
+	ExpiresIn int            `json:"expires_in_seconds"`
+	Payload   map[string]any `json:"payload"`
+	UserID    string         `json:"user_id"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 type PendingActionRequest struct {

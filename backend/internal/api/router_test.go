@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 )
 
 type memorySessions struct {
-	values map[string]domain.Session
+	values  map[string]domain.Session
 	counter int
 }
 
@@ -94,6 +95,22 @@ func (m *memoryNotifier) Notify(_ context.Context, userID string, message string
 	return domain.Notification{Status: "sent", MentorName: "Алексей Смит"}, nil
 }
 
+type blockingNotifier struct {
+	started chan string
+	release chan struct{}
+	mu      sync.Mutex
+	calls   []string
+}
+
+func (m *blockingNotifier) Notify(_ context.Context, _ string, _ string, idempotencyKey string) (domain.Notification, error) {
+	m.mu.Lock()
+	m.calls = append(m.calls, idempotencyKey)
+	m.mu.Unlock()
+	m.started <- idempotencyKey
+	<-m.release
+	return domain.Notification{Status: "sent", MentorName: "Алексей Смит"}, nil
+}
+
 type memoryBriefings struct {
 	sent map[string]bool
 }
@@ -112,30 +129,70 @@ func (s *memoryBriefings) Claim(_ context.Context, userID string, date string, _
 }
 
 type memoryPendingActions struct {
-	actions map[string]*domain.PendingAction
+	mu               sync.Mutex
+	actions          map[string]*domain.PendingAction
+	failTransitionTo string
 }
 
 func (m *memoryPendingActions) CreatePendingAction(_ context.Context, action *domain.PendingAction) error {
-	m.actions[action.PendingID] = action
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	copy := *action
+	m.actions[action.PendingID] = &copy
 	return nil
 }
 
 func (m *memoryPendingActions) GetPendingAction(_ context.Context, pendingID string) (*domain.PendingAction, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	action, ok := m.actions[pendingID]
 	if !ok {
 		return nil, domain.ErrNotFound
 	}
-	return action, nil
+	copy := *action
+	return &copy, nil
 }
 
-func (m *memoryPendingActions) UpdatePendingActionStatus(_ context.Context, pendingID, status string) error {
+func (m *memoryPendingActions) ClaimPendingAction(_ context.Context, pendingID, userID string) (*domain.PendingAction, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if action, ok := m.actions[pendingID]; ok {
-		action.Status = status
+		if action.UserID != userID {
+			return nil, domain.ErrForbidden
+		}
+		if action.Status != "pending" {
+			return nil, domain.ErrConflict
+		}
+		action.Status = "processing"
+		copy := *action
+		return &copy, nil
 	}
+	return nil, domain.ErrNotFound
+}
+
+func (m *memoryPendingActions) TransitionPendingActionStatus(_ context.Context, pendingID, userID, from, to string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	action, ok := m.actions[pendingID]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if action.UserID != userID {
+		return domain.ErrForbidden
+	}
+	if action.Status != from {
+		return domain.ErrConflict
+	}
+	if to == m.failTransitionTo {
+		return fmt.Errorf("injected status write failure")
+	}
+	action.Status = to
 	return nil
 }
 
 func (m *memoryPendingActions) DeletePendingAction(_ context.Context, pendingID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.actions, pendingID)
 	return nil
 }
@@ -156,12 +213,12 @@ func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
 		Mentors: memoryMentors{interns: map[string][]domain.Intern{
 			"mentor_smith": {{InternID: "intern_ivan", Name: "Иван Иванов", ProgressPercent: 55, Status: "blocked"}},
 		}},
-		Tickets:         mocks,
-		Notifier:        notifier,
-		Briefings:       briefings,
-		PendingActions:  pendingActions,
-		SessionTTL:      24 * time.Hour,
-		BriefingTTL:     48 * time.Hour,
+		Tickets:          mocks,
+		Notifier:         notifier,
+		Briefings:        briefings,
+		PendingActions:   pendingActions,
+		SessionTTL:       24 * time.Hour,
+		BriefingTTL:      48 * time.Hour,
 		PendingActionTTL: 10 * time.Minute,
 		Now: func() time.Time {
 			return fixedTime
@@ -460,11 +517,11 @@ func TestCreatePendingAction(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
 	}
 	var body struct {
-		PendingID       string         `json:"pending_id"`
-		Action          string         `json:"action"`
-		Status          string         `json:"status"`
-		ExpiresInSeconds int           `json:"expires_in_seconds"`
-		Payload         map[string]any `json:"payload"`
+		PendingID        string         `json:"pending_id"`
+		Action           string         `json:"action"`
+		Status           string         `json:"status"`
+		ExpiresInSeconds int            `json:"expires_in_seconds"`
+		Payload          map[string]any `json:"payload"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -509,6 +566,100 @@ func TestConfirmPendingActionCreatesTicket(t *testing.T) {
 	if ticket.RequestID == "" || ticket.System != "confluence" {
 		t.Fatalf("invalid ticket: %#v", ticket)
 	}
+}
+
+func TestConfirmPendingNotificationIsClaimedAtomically(t *testing.T) {
+	notifier := &blockingNotifier{started: make(chan string, 2), release: make(chan struct{})}
+	router := newRouterWith(func(deps *api.Dependencies) { deps.Notifier = notifier })
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+	pendingID := createPendingNotification(t, router, cookie)
+
+	firstResponse := make(chan *httptest.ResponseRecorder, 1)
+	go func() { firstResponse <- confirmPendingNotification(router, cookie, pendingID) }()
+	if key := <-notifier.started; key != pendingID {
+		close(notifier.release)
+		t.Fatalf("notification idempotency key = %q, want %q", key, pendingID)
+	}
+	secondResponseChannel := make(chan *httptest.ResponseRecorder, 1)
+	go func() { secondResponseChannel <- confirmPendingNotification(router, cookie, pendingID) }()
+	var secondResponse *httptest.ResponseRecorder
+	select {
+	case secondResponse = <-secondResponseChannel:
+	case <-time.After(2 * time.Second):
+		close(notifier.release)
+		<-firstResponse
+		t.Fatal("second confirmation entered the notification side effect instead of being rejected")
+	}
+	close(notifier.release)
+	first := <-firstResponse
+
+	if first.Code != http.StatusOK {
+		t.Fatalf("first confirmation status = %d, want %d; body=%s", first.Code, http.StatusOK, first.Body.String())
+	}
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("parallel confirmation status = %d, want %d; body=%s", secondResponse.Code, http.StatusConflict, secondResponse.Body.String())
+	}
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	if len(notifier.calls) != 1 {
+		t.Fatalf("notification calls = %d, want 1", len(notifier.calls))
+	}
+}
+
+func TestConfirmPendingNotificationDoesNotResendWhenStatusWriteFails(t *testing.T) {
+	var pendingStore *memoryPendingActions
+	var notifier *memoryNotifier
+	router := newRouterWith(func(deps *api.Dependencies) {
+		pendingStore = &memoryPendingActions{actions: make(map[string]*domain.PendingAction), failTransitionTo: "confirmed"}
+		notifier = &memoryNotifier{sent: make(map[string]domain.Notification)}
+		deps.PendingActions = pendingStore
+		deps.Notifier = notifier
+	})
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+	pendingID := createPendingNotification(t, router, cookie)
+
+	firstResponse := confirmPendingNotification(router, cookie, pendingID)
+	if firstResponse.Code != http.StatusServiceUnavailable {
+		t.Fatalf("first confirmation status = %d, want %d; body=%s", firstResponse.Code, http.StatusServiceUnavailable, firstResponse.Body.String())
+	}
+	if _, ok := notifier.sent[pendingID]; !ok {
+		t.Fatalf("notification was not sent with stable idempotency key %q", pendingID)
+	}
+	secondResponse := confirmPendingNotification(router, cookie, pendingID)
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("retry status = %d, want %d; body=%s", secondResponse.Code, http.StatusConflict, secondResponse.Body.String())
+	}
+	if len(notifier.sent) != 1 {
+		t.Fatalf("unique notifications = %d, want 1", len(notifier.sent))
+	}
+}
+
+func createPendingNotification(t *testing.T, router http.Handler, cookie *http.Cookie) string {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/api/pending-action", strings.NewReader(`{"action":"notify_mentor","payload":{"message":"Нужна помощь"}}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create pending status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	var body struct {
+		PendingID string `json:"pending_id"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	return body.PendingID
+}
+
+func confirmPendingNotification(router http.Handler, cookie *http.Cookie, pendingID string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "/api/pending-action/confirm", strings.NewReader(`{"pending_id":"`+pendingID+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
 }
 
 func TestConfirmPendingActionRejectsExpired(t *testing.T) {

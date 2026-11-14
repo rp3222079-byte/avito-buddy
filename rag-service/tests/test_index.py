@@ -60,7 +60,7 @@ def test_search_returns_at_most_four_chunks_and_confidence() -> None:
     }
     index = KnowledgeIndex(collection, SingleChunkSplitter(), Path("."), 0.72)
 
-    results, confident = index.search("Когда можно назначить встречу?")
+    results, confident = index.search("Когда можно назначить встречу?", role="intern")
 
     assert len(results) == 4
     assert results[0].source == "team_rules.md"
@@ -78,6 +78,6 @@ def test_search_marks_weak_match_as_not_confident() -> None:
     }
     index = KnowledgeIndex(collection, SingleChunkSplitter(), Path("."), 0.72)
 
-    _, confident = index.search("Какая у меня зарплата?")
+    _, confident = index.search("Какая у меня зарплата?", role="intern")
 
     assert confident is False

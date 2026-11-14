@@ -1,8 +1,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Protocol
+import hmac
+from typing import Literal, Protocol
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import Settings, load_settings
@@ -10,7 +11,9 @@ from app.index import KnowledgeIndex, SearchResult
 
 
 class Searcher(Protocol):
-    def search(self, query: str, limit: int = 4) -> tuple[list[SearchResult], bool]: ...
+    def search(
+        self, query: str, role: str, limit: int = 4
+    ) -> tuple[list[SearchResult], bool]: ...
 
 
 class SearchRequest(BaseModel):
@@ -65,7 +68,9 @@ def build_index(settings: Settings) -> KnowledgeIndex:
     )
 
 
-def create_app(searcher: Searcher | None = None) -> FastAPI:
+def create_app(
+    searcher: Searcher | None = None, internal_token: str | None = None
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         if searcher is None:
@@ -73,8 +78,10 @@ def create_app(searcher: Searcher | None = None) -> FastAPI:
             index = build_index(settings)
             index.index_documents()
             application.state.searcher = index
+            application.state.internal_token = internal_token or settings.internal_token
         else:
             application.state.searcher = searcher
+            application.state.internal_token = internal_token or ""
         yield
 
     application = FastAPI(title="Avito Buddy RAG", version="1.0.0", lifespan=lifespan)
@@ -84,8 +91,27 @@ def create_app(searcher: Searcher | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @application.post("/rag/search", response_model=SearchResponse)
-    def search(body: SearchRequest, request: Request) -> SearchResponse:
-        results, confident = request.app.state.searcher.search(body.query, limit=4)
+    def search(
+        body: SearchRequest,
+        request: Request,
+        internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+        user_id: str | None = Header(default=None, alias="X-User-ID"),
+        role: Literal["intern", "mentor"] | None = Header(default=None, alias="X-User-Role"),
+    ) -> SearchResponse:
+        expected_token = request.app.state.internal_token
+        if not expected_token:
+            raise HTTPException(
+                status_code=503, detail="RAG internal auth is not configured"
+            )
+        if not internal_token or not hmac.compare_digest(internal_token, expected_token):
+            raise HTTPException(
+                status_code=401, detail="Internal service authentication required"
+            )
+        if not user_id or not role:
+            raise HTTPException(status_code=401, detail="Backend identity is required")
+        results, confident = request.app.state.searcher.search(
+            body.query, role=role, limit=4
+        )
         return SearchResponse(
             results=[SearchResultResponse(**vars(result)) for result in results],
             confident=confident,

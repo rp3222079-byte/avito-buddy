@@ -6,11 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ai-service/requirements.txt .
+COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ai-service /app
-COPY knowledge_base /knowledge_base:ro
+COPY ai-service/app ./app
+COPY ai-service/system_prompt.txt ./system_prompt.txt
+COPY ai-service/tools_schema.json ./tools_schema.json
 
 EXPOSE 8000
 

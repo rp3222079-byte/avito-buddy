@@ -72,47 +72,12 @@ services:
       retries: 30
       start_period: 60s
 
-  ai-service:
-    build:
-      context: .
-      dockerfile: ai-service/Dockerfile
-    environment:
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1/}
-      LLM_API_KEY: ${LLM_API_KEY:-ollama}
-      LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
-      RAG_BASE_URL: http://rag-service:8001
-      BACKEND_BASE_URL: http://backend:8080
-      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Novosibirsk}
-      DEMO_USER_ID: ${DEMO_USER_ID:-intern_ivan}
-      DEMO_USER_ROLE: ${DEMO_USER_ROLE:-intern}
-      SYSTEM_PROMPT_PATH: /app/system_prompt.txt
-      TOOLS_SCHEMA_PATH: /app/tools_schema.json
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-local-dev-internal-token}
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./ai-service:/app:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      rag-service:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
-
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      POSTGRES_URL: postgres://avito:***@postgres:5432/avito_buddy?sslmode=disable
+      POSTGRES_URL: postgres://avito:avito@postgres:5432/avito_buddy?sslmode=disable
       REDIS_ADDRESS: redis:6379
       MOCK_JIRA_PATH: /data/mock_jira.json
       MOCK_MENTOR_PATH: /data/mock_mentor.json
@@ -138,6 +103,35 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai-service/Dockerfile
+    environment:
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1/}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
+      BACKEND_BASE_URL: http://backend:8080
+      RAG_BASE_URL: http://rag-service:8001
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-local-dev-internal-token}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Novosibirsk}
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      backend:
+        condition: service_healthy
+      rag-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
 volumes:
   postgres_data:

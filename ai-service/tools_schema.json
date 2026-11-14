@@ -1,81 +1,80 @@
 [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_knowledge_base",
-            "description": "Ищет ответ на вопрос в базе знаний компании (Playbook, правила Авито)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Текст вопроса или ключевые слова"
-                    }
-                },
-                "required": [
-                    "query"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_jira_tasks",
-            "description": "Получает список активных задач стажера из Jira",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_access_ticket",
-            "description": "Создает заявку в IT-поддержку на выдачу доступов",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "system": {
-                        "type": "string",
-                        "description": "Название системы (confluence, jira, figma, github)"
-                    }
-                },
-                "required": [
-                    "system"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "notify_mentor",
-            "description": "Отправляет уведомление наставнику",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Текст сообщения наставнику"
-                    }
-                },
-                "required": [
-                    "message"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_mentor_interns",
-            "description": "Возвращает список стажеров наставника и их текущие блокеры",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
-        }
+  {
+    "type": "function",
+    "function": {
+      "name": "search_knowledge_base",
+      "description": "Ищет ответ на вопрос в базе знаний компании",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Вопрос или ключевые слова для поиска"
+          }
+        },
+        "required": ["query"]
+      }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_jira_tasks",
+      "description": "Получает активные задачи текущего стажёра из Backend",
+      "parameters": {"type": "object", "properties": {}}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_checklist",
+      "description": "Ищет в базе знаний черновой чек-лист адаптации",
+      "parameters": {"type": "object", "properties": {}}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_access_ticket",
+      "description": "Создаёт заявку на доступ. Вызывай только когда запрос явно подтверждён в текущем HTTP-запросе.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "string",
+            "enum": ["confluence", "jira", "figma", "github"],
+            "description": "Система, к которой нужен доступ"
+          }
+        },
+        "required": ["system"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "notify_mentor",
+      "description": "Отправляет наставнику сообщение. Вызывай только когда запрос явно подтверждён в текущем HTTP-запросе.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Краткий текст сообщения наставнику"
+          }
+        },
+        "required": ["message"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_mentor_interns",
+      "description": "Получает список стажёров и блокеров только для текущего наставника",
+      "parameters": {"type": "object", "properties": {}}
+    }
+  }
 ]

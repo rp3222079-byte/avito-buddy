@@ -72,7 +72,7 @@ describe('the onboarding journey', () => {
   it('adapts next steps to progress', () => {
     expect(reducer(pending(), { type: 'reply', text: 'Что дальше?' }).messages.at(-1)?.text).toContain('ждём');
     expect(reducer(approved(), { type: 'reply', text: 'Что дальше?' }).messages.at(-1)?.text).toContain('Доступ получен');
-    expect(reducer(reducer(approved(), { type: 'read' }), { type: 'reply', text: 'Что дальше?' }).messages.at(-1)?.text).toContain('Все квесты');
+    expect(reducer(reducer(approved(), { type: 'read' }), { type: 'reply', text: 'Что дальше?' }).messages.at(-1)?.text).toContain('Все задачи');
   });
 });
 describe('local persistence', () => {

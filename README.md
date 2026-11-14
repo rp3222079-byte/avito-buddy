@@ -1,6 +1,6 @@
 # Бадди · Avito Start
 
-Локальный интерактивный прототип интерфейса Романа для хакатона: уютная RPG-комната, Бадди-проводник, квесты адаптации и демонстрационная заявка на доступ. React + TypeScript + Vite. Frontend пока использует локальные демоданные; независимый Go Backend и RAG API готовы для подключения.
+Локальный интерактивный прототип интерфейса Романа для хакатона: уютная RPG-комната, Бадди-проводник, квесты адаптации и демонстрационная заявка на доступ. React + TypeScript + Vite. По умолчанию UI работает на локальных демоданных; real-режим подключает его к Go Backend, FastAPI AI-сервису и RAG.
 
 ## Запуск
 
@@ -13,6 +13,10 @@ npm run dev
 
 Открой адрес из терминала, обычно http://127.0.0.1:5173. Приложение привязано к loopback. Учётная запись и ключи API не нужны. Для повторного открытия остановленного прототипа достаточно `npm run dev`.
 
+## AI-сервис
+
+FastAPI-сервис и инструкция запуска находятся в [`ai-service/README.md`](ai-service/README.md). Он использует Ollama по умолчанию, исполняет поиск знаний и получение задач через Go Backend и RAG, предоставляет `/health`, `/api/chat` и потоковый `/api/chat/stream`. Go proxy передаёт запросы чата. Тестовая выдача сессии Backend не является настоящей аутентификацией.
+
 ```sh
 npm run build
 npm run preview
@@ -20,7 +24,14 @@ npm test
 npm run test:coverage
 ```
 
-Точные версии зависимостей закреплены в `package-lock.json`. Сборка находится в `dist/`; для неё нужен HTTP-сервер, открытие HTML через `file://` не поддерживается. Шрифты и изображения поставляются локально, внешних запросов к API нет.
+Для запуска связки Backend + AI + RAG + PostgreSQL + Redis + ChromaDB скопируй
+`.env.example` в `.env`, запусти Ollama на компьютере и выполни
+`docker compose up --build`. AI-сервис будет доступен на порту 8000, Backend —
+на 8080, RAG — на 8001. Внутри Compose Backend обращается к `ai-service`, а AI —
+к `backend` и `rag-service` по именам сервисов. Для real-режима frontend запусти
+с `VITE_API_MODE=real npm run dev`.
+
+Точные версии зависимостей закреплены в `package-lock.json`. Сборка находится в `dist/`; для неё нужен HTTP-сервер, открытие HTML через `file://` не поддерживается. Шрифты и изображения поставляются локально. В mock-режиме внешних запросов к API нет.
 
 ## Демосценарий на 2 минуты
 
@@ -47,6 +58,7 @@ npm run test:coverage
 ## Структура
 
 - `docs/project-context.md` — требования трека, решения из обсуждения, роли команды и оставшиеся этапы.
+- `ai-service/` — каркас FastAPI AI-сервиса и инструкция запуска с локальной Ollama.
 - `src/model.ts` — демоданные, типы, состояния и переходы, ответы, расчёт опыта, сохранение.
 - `src/App.tsx` — интерфейс, локальные задержки 650/900 мс и пользовательские действия.
 - `src/Modal.tsx` — доступное диалоговое окно.
@@ -56,21 +68,10 @@ npm run test:coverage
 - `docs/integration-contract.md` — предлагаемые границы будущей интеграции для обсуждения с командой.
 - `docs/openapi.yaml` — зафиксированный контракт Go Backend и RAG для frontend и AI-service.
 - `docs/backend-api.md` — запуск стека, демо-пользователи и curl-примеры.
-- `backend` — Go API, сессии, роли, Redis и PostgreSQL.
-- `rag-service` — FastAPI-поиск по девяти документам через ChromaDB.
+- `backend/` — Go API, сессии, роли, Redis и PostgreSQL.
+- `rag-service/` — FastAPI-поиск по базе знаний через ChromaDB.
 - `public/assets` — подготовленная комната и выбранный маскот.
 - `design/concepts` — визуальные концепты и промпты.
-
-## Backend и RAG
-
-Полный стек запускается независимо от frontend:
-
-```sh
-cp .env.example .env
-docker compose up --build -d
-```
-
-Backend доступен на `http://localhost:8080`, RAG Swagger — на `http://localhost:8001/docs`. Инструкция и примеры находятся в `docs/backend-api.md`.
 
 ## Проверка
 

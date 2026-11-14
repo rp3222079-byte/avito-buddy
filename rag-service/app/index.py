@@ -47,7 +47,10 @@ class KnowledgeIndex:
         for path in files:
             source = path.name
             content = path.read_text(encoding="utf-8")
-            chunks = [chunk.strip() for chunk in self._splitter.split_text(content)]
+            allowed_roles, indexed_content = self._document_access(content, source)
+            chunks = [
+                chunk.strip() for chunk in self._splitter.split_text(indexed_content)
+            ]
             chunks = [chunk for chunk in chunks if chunk]
             checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
             existing = self._collection.get(
@@ -60,7 +63,13 @@ class KnowledgeIndex:
                 self._collection.delete(where={"source": source})
             ids = [self._chunk_id(source, checksum, number) for number in range(len(chunks))]
             metadatas = [
-                {"source": source, "checksum": checksum, "chunk_number": number}
+                {
+                    "source": source,
+                    "checksum": checksum,
+                    "chunk_number": number,
+                    "allow_intern": "intern" in allowed_roles,
+                    "allow_mentor": "mentor" in allowed_roles,
+                }
                 for number in range(len(chunks))
             ]
             self._collection.upsert(
@@ -71,11 +80,16 @@ class KnowledgeIndex:
             indexed += len(chunks)
         return indexed
 
-    def search(self, query: str, limit: int = 4) -> tuple[list[SearchResult], bool]:
+    def search(
+        self, query: str, role: str, limit: int = 4
+    ) -> tuple[list[SearchResult], bool]:
+        if role not in {"intern", "mentor"}:
+            raise ValueError("role must be intern or mentor")
         response = self._collection.query(
             query_texts=[query],
             n_results=min(limit, 4),
             include=["documents", "metadatas", "distances"],
+            where={f"allow_{role}": True},
         )
         ids = (response.get("ids") or [[]])[0]
         documents = (response.get("documents") or [[]])[0]
@@ -101,3 +115,22 @@ class KnowledgeIndex:
     def _chunk_id(source: str, checksum: str, number: int) -> str:
         value = f"{source}:{checksum}:{number}".encode("utf-8")
         return hashlib.sha256(value).hexdigest()
+
+    @staticmethod
+    def _document_access(content: str, source: str) -> tuple[set[str], str]:
+        marker, separator, body = content.partition("\n")
+        prefix = "<!-- allowed_roles:"
+        if not separator or not marker.startswith(prefix) or not marker.endswith("-->"):
+            raise RuntimeError(
+                f"Документ {source} не содержит allowed_roles в первой строке"
+            )
+        roles = {
+            role.strip()
+            for role in marker[len(prefix):-3].split(",")
+            if role.strip()
+        }
+        if not roles or not roles.issubset({"intern", "mentor"}):
+            raise RuntimeError(
+                f"Документ {source} содержит некорректный allowed_roles"
+            )
+        return roles, body
