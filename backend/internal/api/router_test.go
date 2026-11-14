@@ -2,6 +2,9 @@ package api_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -228,6 +231,7 @@ func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
 			"intern_anna":  domain.RoleIntern,
 			"mentor_smith": domain.RoleMentor,
 		},
+		DemoMode: true,
 	}
 	for _, apply := range configure {
 		apply(&deps)
@@ -281,6 +285,18 @@ func TestSessionAllowsKnownIdentityAndTasksUseIt(t *testing.T) {
 	}
 	if len(body.Tasks) != 1 || body.Tasks[0].ID != "AVT-555" {
 		t.Fatalf("tasks = %#v, want only AVT-555", body.Tasks)
+	}
+}
+
+func TestSessionIsUnavailableOutsideDemoMode(t *testing.T) {
+	router := newRouterWith(func(deps *api.Dependencies) { deps.DemoMode = false })
+	request := httptest.NewRequest(http.MethodPost, "/api/session", strings.NewReader(`{"user_id":"intern_ivan","role":"intern"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "demo_mode_disabled") {
+		t.Fatalf("status/body = %d/%s", response.Code, response.Body.String())
 	}
 }
 
@@ -473,6 +489,26 @@ func TestNotificationIdempotency(t *testing.T) {
 	// Should return same result
 	if response.Body.String() != response2.Body.String() {
 		t.Fatalf("idempotency failed: %s vs %s", response.Body.String(), response2.Body.String())
+	}
+}
+
+func TestNotificationAcceptsIdempotencyHeader(t *testing.T) {
+	router := newRouter()
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+	send := func(message string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/notify-mentor", strings.NewReader(`{"message":"`+message+`"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "header-key-1")
+		request.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	first := send("Нужна помощь")
+	second := send("Другое сообщение")
+	if first.Code != http.StatusOK || first.Body.String() != second.Body.String() {
+		t.Fatalf("responses = %d/%s and %d/%s", first.Code, first.Body.String(), second.Code, second.Body.String())
 	}
 }
 
@@ -771,6 +807,13 @@ func TestChatProxyReplacesForgedIdentityHeaders(t *testing.T) {
 		if request.Header.Get("X-User-ID") != "intern_ivan" || request.Header.Get("X-User-Role") != "intern" {
 			t.Errorf("identity headers = %q/%q", request.Header.Get("X-User-ID"), request.Header.Get("X-User-Role"))
 		}
+		payload := "intern_ivan|intern|2026-11-11T09:00:00Z"
+		signature := hmac.New(sha256.New, []byte("request-secret"))
+		_, _ = signature.Write([]byte(payload))
+		expectedContext := payload + "." + hex.EncodeToString(signature.Sum(nil))
+		if request.Header.Get("X-Request-Context") != expectedContext {
+			t.Errorf("request context = %q, want %q", request.Header.Get("X-Request-Context"), expectedContext)
+		}
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{"reply":"ok"}`))
 	}))
@@ -779,6 +822,7 @@ func TestChatProxyReplacesForgedIdentityHeaders(t *testing.T) {
 	router := newRouterWith(func(deps *api.Dependencies) {
 		deps.AIBaseURL = upstream.URL
 		deps.HTTPClient = upstream.Client()
+		deps.RequestContextSecret = "request-secret"
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"message":"Привет"}`))
 	request.Header.Set("Content-Type", "application/json")

@@ -48,6 +48,7 @@ paths:
                 $ref: "#/components/schemas/Session"
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
     delete:
       tags: [session]
       operationId: deleteSession
@@ -125,6 +126,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/InternalUserID"
         - $ref: "#/components/parameters/InternalUserRole"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -303,6 +305,11 @@ paths:
     post:
       tags: [rag]
       operationId: searchKnowledgeBase
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: "#/components/parameters/InternalUserID"
+        - $ref: "#/components/parameters/InternalUserRole"
       requestBody:
         required: true
         content:
@@ -343,6 +350,12 @@ components:
       required: false
       schema: { type: string, enum: [intern, mentor] }
       description: Обязателен только при авторизации через `X-Internal-Token`.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+      description: Ключ повторной отправки уведомления; имеет приоритет над полем `idempotency_key` в JSON.
   requestBodies:
     ChatRequest:
       required: true
@@ -424,7 +437,7 @@ components:
           enum: [create_access_ticket, notify_mentor]
         payload:
           type: object
-          required: [system]
+          description: Для `create_access_ticket` обязателен `system`, для `notify_mentor` — `message`.
           properties:
             system:
               type: string
@@ -437,6 +450,7 @@ components:
               maxLength: 240
             message:
               type: string
+              minLength: 1
               maxLength: 1000
     PendingActionResponse:
       type: object

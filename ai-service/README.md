@@ -75,7 +75,9 @@ Both chat endpoints accept `X-User-ID` and `X-User-Role` headers from the Go
 Backend and require `X-Internal-Token`. Set `INTERNAL_TOKEN` to the same secret
 in AI-service and Go Backend. Supply a valid identity and role from the Backend
 session on every request; the service does not invent a demo identity when
-headers are missing.
+headers are missing. When `REQUEST_CONTEXT_SECRET` is configured, the service
+also requires `X-Request-Context`, verifies its HMAC signature and identity, and
+rejects contexts older than 60 seconds. Use the same secret in both services.
 
 Enabled tools:
 

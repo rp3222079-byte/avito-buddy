@@ -18,6 +18,7 @@ def test_get_settings_reads_environment_values(monkeypatch, tmp_path):
         "RAG_BASE_URL": "http://rag.test",
         "BACKEND_BASE_URL": "http://backend.test",
         "INTERNAL_TOKEN": "shared-secret",
+        "REQUEST_CONTEXT_SECRET": "request-secret",
         "APP_TIMEZONE": "UTC",
         "SYSTEM_PROMPT_PATH": str(tmp_path / "prompt.txt"),
         "TOOLS_SCHEMA_PATH": str(tmp_path / "tools.json"),
@@ -34,6 +35,7 @@ def test_get_settings_reads_environment_values(monkeypatch, tmp_path):
     assert settings.rag_base_url == values["RAG_BASE_URL"]
     assert settings.backend_base_url == values["BACKEND_BASE_URL"]
     assert settings.internal_token == values["INTERNAL_TOKEN"]
+    assert settings.request_context_secret == values["REQUEST_CONTEXT_SECRET"]
     assert settings.app_timezone == "UTC"
     assert str(settings.system_prompt_path) == values["SYSTEM_PROMPT_PATH"]
     assert str(settings.tools_schema_path) == values["TOOLS_SCHEMA_PATH"]
@@ -50,6 +52,7 @@ async def test_app_lifespan_initializes_and_closes_clients(monkeypatch, tmp_path
         rag_base_url="http://rag.test",
         backend_base_url="http://backend.test",
         internal_token="shared-secret",
+        request_context_secret="request-secret",
         app_timezone="UTC",
         system_prompt_path=tmp_path / "system_prompt.txt",
         tools_schema_path=tmp_path / "tools.json",
@@ -78,6 +81,7 @@ async def test_app_lifespan_initializes_and_closes_clients(monkeypatch, tmp_path
         assert application.state.settings is settings
         assert application.state.llm_client is llm_client
         assert application.state.internal_token == "shared-secret"
+        assert application.state.request_context_secret == "request-secret"
         assert application.state.agent is agent
         executor_factory.assert_called_once()
         agent_factory.assert_called_once()

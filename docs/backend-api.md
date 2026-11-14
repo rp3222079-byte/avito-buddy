@@ -49,18 +49,6 @@ AI-service требует запущенного Ollama с моделью `qwen3
 | `intern_maria` | `intern` |
 | `mentor_smith` | `mentor` |
 
----
-
-## Демо-пользователи
-
-| user_id | role |
-|---|---|
-| `intern_ivan` | `intern` |
-| `intern_anna` | `intern` |
-| `intern_oleg` | `intern` |
-| `intern_maria` | `intern` |
-| `mentor_smith` | `mentor` |
-
 ## Проверка через curl
 
 Создание сессии стажёра:
@@ -152,7 +140,9 @@ X-User-Role: intern
 
 Один только `X-User-ID` не даёт доступ. Значение `INTERNAL_TOKEN` должно совпадать у Go Backend и AI-service и не должно передаваться браузеру.
 
-AI-service также получает подписанный `X-Request-Context` для верификации доверенного контекста.
+AI-service также получает подписанный `X-Request-Context` и при заданном
+`REQUEST_CONTEXT_SECRET` проверяет подпись, совпадение пользователя и роли, а
+также возраст контекста. Значение secret должно совпадать у Backend и AI-service.
 
 ## Тесты
 

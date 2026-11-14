@@ -18,6 +18,7 @@ class Settings:
     rag_base_url: str
     backend_base_url: str
     internal_token: str
+    request_context_secret: str
     app_timezone: str
     system_prompt_path: Path
     tools_schema_path: Path
@@ -33,6 +34,7 @@ def get_settings() -> Settings:
         rag_base_url=os.getenv("RAG_BASE_URL", "http://localhost:8001"),
         backend_base_url=os.getenv("BACKEND_BASE_URL", "http://localhost:8080"),
         internal_token=os.getenv("INTERNAL_TOKEN", ""),
+        request_context_secret=os.getenv("REQUEST_CONTEXT_SECRET", ""),
         app_timezone=os.getenv("APP_TIMEZONE", "Asia/Novosibirsk"),
         system_prompt_path=Path(
             os.getenv("SYSTEM_PROMPT_PATH", str(SERVICE_DIR / "system_prompt.txt"))

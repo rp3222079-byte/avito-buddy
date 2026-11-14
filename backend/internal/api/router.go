@@ -120,7 +120,7 @@ func cors(allowedOrigins []string) gin.HandlerFunc {
 		if _, ok := allowed[origin]; ok && origin != "" {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Accept")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Accept, Idempotency-Key")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			c.Header("Vary", "Origin")
 		}
@@ -139,6 +139,10 @@ func createSession(deps Dependencies) gin.HandlerFunc {
 		Role   domain.Role `json:"role" binding:"required"`
 	}
 	return func(c *gin.Context) {
+		if !deps.DemoMode {
+			respondError(c, http.StatusServiceUnavailable, "demo_mode_disabled", "Демо-авторизация отключена")
+			return
+		}
 		var input request
 		if err := c.ShouldBindJSON(&input); err != nil {
 			respondError(c, http.StatusBadRequest, "invalid_request", "Некорректные данные сессии")
@@ -306,7 +310,11 @@ func notifyMentor(notifier Notifier) gin.HandlerFunc {
 			return
 		}
 		session := c.MustGet("session").(domain.Session)
-		notification, err := notifier.Notify(c.Request.Context(), session.UserID, strings.TrimSpace(input.Message), input.IdempotencyKey)
+		idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		if idempotencyKey == "" {
+			idempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+		}
+		notification, err := notifier.Notify(c.Request.Context(), session.UserID, strings.TrimSpace(input.Message), idempotencyKey)
 		if err != nil {
 			respondError(c, http.StatusServiceUnavailable, "notification_unavailable", "Не удалось отправить уведомление наставнику")
 			return
@@ -575,7 +583,11 @@ func proxyAI(deps Dependencies, path string) gin.HandlerFunc {
 			request.Header.Set("X-Internal-Token", deps.InternalToken)
 		}
 		if deps.RequestContextSecret != "" {
-			ctxPayload := session.UserID + "|" + string(session.Role) + "|" + time.Now().UTC().Format(time.RFC3339)
+			now := time.Now
+			if deps.Now != nil {
+				now = deps.Now
+			}
+			ctxPayload := session.UserID + "|" + string(session.Role) + "|" + now().UTC().Format(time.RFC3339)
 			h := hmac.New(sha256.New, []byte(deps.RequestContextSecret))
 			h.Write([]byte(ctxPayload))
 			signature := hex.EncodeToString(h.Sum(nil))

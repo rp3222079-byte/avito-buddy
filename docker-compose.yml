@@ -116,6 +116,7 @@ services:
       BACKEND_BASE_URL: http://backend:8080
       RAG_BASE_URL: http://rag-service:8001
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-local-dev-internal-token}
+      REQUEST_CONTEXT_SECRET: ${REQUEST_CONTEXT_SECRET:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Novosibirsk}
     ports:
       - "8000:8000"

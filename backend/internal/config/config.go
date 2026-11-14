@@ -8,23 +8,23 @@ import (
 )
 
 type Config struct {
-	Address             string
-	PostgresURL         string
-	RedisAddress        string
-	RedisPassword       string
-	RedisDatabase       int
-	TasksPath           string
-	MentorsPath         string
-	AIBaseURL           string
-	InternalToken       string
-	AllowedOrigins      []string
-	SessionTTL          time.Duration
-	BriefingTTL         time.Duration
-	PendingActionTTL    time.Duration
-	ShutdownTimeout     time.Duration
-	DependencyTimeout   time.Duration
+	Address              string
+	PostgresURL          string
+	RedisAddress         string
+	RedisPassword        string
+	RedisDatabase        int
+	TasksPath            string
+	MentorsPath          string
+	AIBaseURL            string
+	InternalToken        string
+	AllowedOrigins       []string
+	SessionTTL           time.Duration
+	BriefingTTL          time.Duration
+	PendingActionTTL     time.Duration
+	ShutdownTimeout      time.Duration
+	DependencyTimeout    time.Duration
 	RequestContextSecret string
-	DemoMode            bool
+	DemoMode             bool
 }
 
 func Load() Config {

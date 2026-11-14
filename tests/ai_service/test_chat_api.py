@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -15,6 +18,7 @@ def app():
     application = FastAPI()
     application.include_router(router)
     application.state.internal_token = "test-internal-token"
+    application.state.request_context_secret = ""
     application.state.settings = SimpleNamespace(llm_model="test-model")
     application.state.agent = SimpleNamespace(
         reply=AsyncMock(
@@ -28,6 +32,13 @@ def app():
         stream_reply=AsyncMock(),
     )
     return application
+
+
+def signed_context(user_id: str, role: str, requested_at: datetime | None = None) -> str:
+    timestamp = (requested_at or datetime.now(timezone.utc)).replace(microsecond=0)
+    payload = f"{user_id}|{role}|{timestamp.isoformat().replace('+00:00', 'Z')}"
+    signature = hmac.new(b"request-secret", payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{signature}"
 
 
 @pytest.mark.asyncio
@@ -75,6 +86,48 @@ async def test_chat_route_forwards_backend_identity_headers(app):
     app.state.agent.reply.assert_awaited_once_with(
         "Покажи задачи", role="intern", user_id="intern-42", confirmed_action=None
     )
+
+
+@pytest.mark.asyncio
+async def test_chat_route_verifies_signed_request_context(app):
+    app.state.request_context_secret = "request-secret"
+    transport = httpx.ASGITransport(app=app)
+    headers = {
+        "X-Internal-Token": "test-internal-token",
+        "X-User-ID": "demo-intern",
+        "X-User-Role": "intern",
+        "X-Request-Context": signed_context("demo-intern", "intern"),
+    }
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/chat", json={"message": "Привет"}, headers=headers)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        None,
+        "invalid",
+        signed_context("another-user", "intern"),
+        signed_context("demo-intern", "intern", datetime.now(timezone.utc) - timedelta(minutes=2)),
+    ],
+)
+@pytest.mark.asyncio
+async def test_chat_route_rejects_invalid_request_context(app, context):
+    app.state.request_context_secret = "request-secret"
+    headers = {
+        "X-Internal-Token": "test-internal-token",
+        "X-User-ID": "demo-intern",
+        "X-User-Role": "intern",
+    }
+    if context is not None:
+        headers["X-Request-Context"] = context
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/chat", json={"message": "Привет"}, headers=headers)
+
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
