@@ -26,6 +26,19 @@ export no_proxy=localhost,127.0.0.1
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
+## MVP-эндпоинты скорборда и STUCK
+
+- `POST /sync/jira` — возвращает результат мок-синхронизации и `updated: 4`.
+- `GET /scoreboard?week=...` — отдаёт `mock_scoreboard.json`; параметр недели игнорируется.
+- `GET /tasks/{id}/stages` — отдаёт переходы и длительности этапов в секундах.
+- `GET /interns/{id}/metrics` — отдаёт `mock_ai_metrics_response.json`.
+- `GET /flags?mentor_id=...` — отдаёт `mock_flags.json`.
+- `PATCH /flags/{id}/resolve` — подтверждает локальное скрытие флага, не изменяя мок.
+
+Эти маршруты являются открытыми MVP-заглушками. Существующий защищённый
+`GET /api/mentor/interns` дополнительно возвращает активные `flags`, `stuck`,
+вычисленные `status` и `blockers`.
+
 Первый запуск RAG скачивает мультиязычную ONNX-модель размером около 220 МБ. Модель сохраняется в Docker volume `embedding_models`.
 AI-service требует запущенного Ollama с моделью `qwen3:8b` (по умолчанию на хосте).
 

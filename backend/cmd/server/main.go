@@ -51,26 +51,36 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	features, err := storage.NewFeatureStore(
+		cfg.TasksPath,
+		cfg.ScoreboardPath,
+		cfg.FlagsPath,
+		cfg.MetricsPath,
+	)
+	if err != nil {
+		return err
+	}
 	redisStore := storage.NewRedisStore(redisClient).WithNowFunc(time.Now)
 	router := api.NewRouter(api.Dependencies{
-		Sessions:              redisStore,
-		Tasks:                 mocks,
-		Mentors:               mocks,
-		Tickets:               storage.NewPostgresTicketStore(database),
-		Notifier:              mocks,
-		Briefings:             redisStore,
-		PendingActions:        redisStore,
-		SessionTTL:            cfg.SessionTTL,
-		BriefingTTL:           cfg.BriefingTTL,
-		PendingActionTTL:      cfg.PendingActionTTL,
-		Now:                   time.Now,
-		AIBaseURL:             cfg.AIBaseURL,
-		InternalToken:         cfg.InternalToken,
-		AllowedOrigins:        cfg.AllowedOrigins,
-		AllowedIdentities:     mocks.AllowedIdentities(),
-		RequestContextSecret:  cfg.RequestContextSecret,
-		DemoMode:              cfg.DemoMode,
-		HTTPClient:            &http.Client{Timeout: 130 * time.Second},
+		Sessions:             redisStore,
+		Tasks:                mocks,
+		Mentors:              mocks,
+		Tickets:              storage.NewPostgresTicketStore(database),
+		Notifier:             mocks,
+		Briefings:            redisStore,
+		PendingActions:       redisStore,
+		Features:             features,
+		SessionTTL:           cfg.SessionTTL,
+		BriefingTTL:          cfg.BriefingTTL,
+		PendingActionTTL:     cfg.PendingActionTTL,
+		Now:                  time.Now,
+		AIBaseURL:            cfg.AIBaseURL,
+		InternalToken:        cfg.InternalToken,
+		AllowedOrigins:       cfg.AllowedOrigins,
+		AllowedIdentities:    mocks.AllowedIdentities(),
+		RequestContextSecret: cfg.RequestContextSecret,
+		DemoMode:             cfg.DemoMode,
+		HTTPClient:           &http.Client{Timeout: 130 * time.Second},
 	})
 	server := &http.Server{
 		Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second,

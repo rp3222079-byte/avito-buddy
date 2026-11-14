@@ -54,6 +54,14 @@ type PendingActionStore interface {
 	DeletePendingAction(context.Context, string) error
 }
 
+type FeatureStore interface {
+	SyncJira(context.Context) (int, error)
+	Scoreboard(context.Context) (domain.Scoreboard, error)
+	TaskStages(context.Context, string) (domain.TaskStages, error)
+	Metrics(context.Context, string) (domain.InternMetrics, error)
+	Flags(context.Context, string) ([]domain.Flag, error)
+}
+
 type Dependencies struct {
 	Sessions             SessionStore
 	Tasks                TaskStore
@@ -62,6 +70,7 @@ type Dependencies struct {
 	Notifier             Notifier
 	Briefings            BriefingStore
 	PendingActions       PendingActionStore
+	Features             FeatureStore
 	SessionTTL           time.Duration
 	BriefingTTL          time.Duration
 	PendingActionTTL     time.Duration
@@ -93,6 +102,12 @@ func NewRouter(deps Dependencies) http.Handler {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	router.POST("/api/session", createSession(deps))
+	router.POST("/sync/jira", syncJira(deps.Features))
+	router.GET("/scoreboard", getScoreboard(deps.Features))
+	router.GET("/tasks/:id/stages", getTaskStages(deps.Features))
+	router.GET("/interns/:id/metrics", getInternMetrics(deps.Features))
+	router.GET("/flags", getFlags(deps.Features))
+	router.PATCH("/flags/:id/resolve", resolveFlag())
 	authorized := router.Group("/api", authenticate(deps))
 	authorized.DELETE("/session", deleteSession(deps.Sessions))
 	authorized.GET("/jira/tasks", getTasks(deps.Tasks))
@@ -106,7 +121,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authorized.POST("/chat", proxyAI(deps, "/api/chat"))
 	authorized.POST("/chat/stream", proxyAI(deps, "/api/chat/stream"))
 	mentor := authorized.Group("/mentor", requireRole(domain.RoleMentor))
-	mentor.GET("/interns", getInterns(deps.Mentors))
+	mentor.GET("/interns", getInterns(deps.Mentors, deps.Features))
 	return router
 }
 
@@ -121,7 +136,7 @@ func cors(allowedOrigins []string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Headers", "Content-Type, Accept, Idempotency-Key")
-			c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			c.Header("Vary", "Origin")
 		}
 		if c.Request.Method == http.MethodOptions {
@@ -253,7 +268,7 @@ func requireRole(role domain.Role) gin.HandlerFunc {
 	}
 }
 
-func getInterns(store MentorStore) gin.HandlerFunc {
+func getInterns(store MentorStore, features FeatureStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := c.MustGet("session").(domain.Session)
 		interns, err := store.ForMentor(c.Request.Context(), session.UserID)
@@ -263,6 +278,14 @@ func getInterns(store MentorStore) gin.HandlerFunc {
 		}
 		if interns == nil {
 			interns = make([]domain.Intern, 0)
+		}
+		if features != nil {
+			flags, err := features.Flags(c.Request.Context(), session.UserID)
+			if err != nil {
+				respondError(c, http.StatusServiceUnavailable, "flags_unavailable", "Не удалось получить флаги стажёров")
+				return
+			}
+			interns = enrichInterns(interns, flags)
 		}
 		c.JSON(http.StatusOK, gin.H{"interns": interns})
 	}
