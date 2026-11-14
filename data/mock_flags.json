@@ -1,0 +1,52 @@
+{
+  "flags": [
+    {
+      "id": "f-001",
+      "intern_id": "intern_ivan",
+      "task_id": "AVT-555",
+      "stage": "IN_PROGRESS",
+      "type": "STUCK",
+      "severity": "high",
+      "reason": "Blocker в IN_PROGRESS 10 дней, порог 1ч",
+      "created_at": "2026-11-03T11:00:00Z",
+      "resolved_at": null,
+      "resolved_by": null
+    },
+    {
+      "id": "f-002",
+      "intern_id": "intern_ivan",
+      "task_id": "AVT-562",
+      "stage": "NOT_STARTED",
+      "type": "STUCK",
+      "severity": "high",
+      "reason": "Blocker в NOT_STARTED 4 дня, порог 1ч",
+      "created_at": "2026-11-09T10:00:00Z",
+      "resolved_at": null,
+      "resolved_by": null
+    },
+    {
+      "id": "f-003",
+      "intern_id": "intern_anna",
+      "task_id": "AVT-558",
+      "stage": "IN_PROGRESS",
+      "type": "STUCK",
+      "severity": "medium",
+      "reason": "Feature/High в IN_PROGRESS 11 дней, fallback baseline 8ч × 1.5 = 12ч",
+      "created_at": "2026-11-03T11:00:00Z",
+      "resolved_at": null,
+      "resolved_by": null
+    },
+    {
+      "id": "f-004",
+      "intern_id": "intern_oleg",
+      "task_id": "AVT-560",
+      "stage": "IN_PROGRESS",
+      "type": "STUCK",
+      "severity": "medium",
+      "reason": "Task/High в IN_PROGRESS 9 дней, норма 8ч × 1.5 = 12ч",
+      "created_at": "2026-11-05T11:00:00Z",
+      "resolved_at": null,
+      "resolved_by": null
+    }
+  ]
+}

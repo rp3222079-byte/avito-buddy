@@ -1,0 +1,7 @@
+{
+  "intern_id": "intern_ivan",
+  "stages": [
+    {"stage": "IN_PROGRESS", "avg_hours": 2.5, "baseline_hours": 2.0, "deviation_percent": 25},
+    {"stage": "ALMOST_DONE", "avg_hours": 1.0, "baseline_hours": 1.5, "deviation_percent": -33}
+  ]
+}
