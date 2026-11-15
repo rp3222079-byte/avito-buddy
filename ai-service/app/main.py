@@ -4,7 +4,7 @@ from fastapi import FastAPI
 import httpx
 from openai import AsyncOpenAI
 
-from app.api.routes import chat, health
+from app.api.routes import chat, health, metrics
 from app.core.config import get_settings
 from app.integrations.backend_client import BackendClient
 from app.integrations.rag_client import RagClient
@@ -56,4 +56,5 @@ app = FastAPI(
 )
 app.include_router(health.router)
 app.include_router(chat.router)
+app.include_router(metrics.router)
 
