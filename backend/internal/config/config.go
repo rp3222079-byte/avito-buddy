@@ -8,23 +8,26 @@ import (
 )
 
 type Config struct {
-	Address             string
-	PostgresURL         string
-	RedisAddress        string
-	RedisPassword       string
-	RedisDatabase       int
-	TasksPath           string
-	MentorsPath         string
-	AIBaseURL           string
-	InternalToken       string
-	AllowedOrigins      []string
-	SessionTTL          time.Duration
-	BriefingTTL         time.Duration
-	PendingActionTTL    time.Duration
-	ShutdownTimeout     time.Duration
-	DependencyTimeout   time.Duration
+	Address              string
+	PostgresURL          string
+	RedisAddress         string
+	RedisPassword        string
+	RedisDatabase        int
+	TasksPath            string
+	MentorsPath          string
+	ScoreboardPath       string
+	FlagsPath            string
+	MetricsPath          string
+	AIBaseURL            string
+	InternalToken        string
+	AllowedOrigins       []string
+	SessionTTL           time.Duration
+	BriefingTTL          time.Duration
+	PendingActionTTL     time.Duration
+	ShutdownTimeout      time.Duration
+	DependencyTimeout    time.Duration
 	RequestContextSecret string
-	DemoMode            bool
+	DemoMode             bool
 }
 
 func Load() Config {
@@ -36,6 +39,9 @@ func Load() Config {
 		RedisDatabase:        envInt("REDIS_DATABASE", 0),
 		TasksPath:            env("MOCK_JIRA_PATH", "../data/mock_jira.json"),
 		MentorsPath:          env("MOCK_MENTOR_PATH", "../data/mock_mentor.json"),
+		ScoreboardPath:       env("MOCK_SCOREBOARD_PATH", "../data/mock_scoreboard.json"),
+		FlagsPath:            env("MOCK_FLAGS_PATH", "../data/mock_flags.json"),
+		MetricsPath:          env("MOCK_METRICS_PATH", "../data/mock_ai_metrics_response.json"),
 		AIBaseURL:            env("AI_BASE_URL", "http://localhost:8000"),
 		InternalToken:        os.Getenv("INTERNAL_TOKEN"),
 		AllowedOrigins:       splitCSV(env("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),

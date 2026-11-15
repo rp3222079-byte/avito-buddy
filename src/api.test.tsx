@@ -40,11 +40,11 @@ it('reads SSE over POST and confirms actions only after backend success', async 
   ];
   const request = vi.fn()
     .mockResolvedValueOnce(Response.json({ tasks: [] }))
-    .mockResolvedValueOnce(sse(['event: delta\ndata: {"text":"Нужен "}\n\n']))
+    .mockResolvedValueOnce(sse(['event: token\ndata: {"text":"Нужен "}\n\n']))
     .mockResolvedValueOnce(sse([
       ': heartbeat\r\n\r\n',
-      'event: delta\r\ndata: {"text":"Проверим "}\r\n\r\n',
-      'event: delta\ndata: {"text":"доступ."}\n\n',
+      'event: token\r\ndata: {"text":"Проверим "}\r\n\r\n',
+      'event: token\ndata: {"text":"доступ."}\n\n',
       `event: done\ndata: {"sources": [{"source":"access_guide.md"}],\ndata: "actions": ${JSON.stringify(actions)}}\n\n`,
     ]))
     .mockResolvedValueOnce(new Response(null, { status: 503 }))

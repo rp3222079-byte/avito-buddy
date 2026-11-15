@@ -1,0 +1,11 @@
+{
+  "week": "2026-W46",
+  "entries": [
+    {"intern_id": "intern_anna",   "name": "Анна Петрова",    "points": 40, "place": 1, "is_top5": true},
+    {"intern_id": "intern_olga",   "name": "Ольга Новикова",  "points": 40, "place": 2, "is_top5": true},
+    {"intern_id": "intern_maria",  "name": "Мария Козлова",   "points": 25, "place": 3, "is_top5": true},
+    {"intern_id": "intern_ivan",   "name": "Иван Иванов",     "points": 15, "place": 4, "is_top5": true},
+    {"intern_id": "intern_oleg",   "name": "Олег Смирнов",    "points": 15, "place": 5, "is_top5": true},
+    {"intern_id": "intern_dmitry", "name": "Дмитрий Соколов", "points": 8,  "place": 6, "is_top5": false}
+  ]
+}

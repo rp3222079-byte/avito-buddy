@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.llm_client = client
     app.state.internal_token = settings.internal_token
+    app.state.request_context_secret = settings.request_context_secret
     app.state.agent = AgentService(
         client=client,
         model=settings.llm_model,

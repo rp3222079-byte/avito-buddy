@@ -1,4 +1,5 @@
 {
+  "current_time": "2026-11-13T12:00:00Z",
   "tasks": [
     {
       "id": "AVT-554",
@@ -8,7 +9,14 @@
       "description": "Установить Docker, поднять Postgres, запустить проект локально.",
       "assignee": "intern_ivan",
       "type": "Task",
-      "created_at": "2026-11-01"
+      "created_at": "2026-11-01",
+      "updated_at": "2026-11-04T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-01T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-02T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-03T14:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-04T11:00:00Z"}
+      ]
     },
     {
       "id": "AVT-555",
@@ -18,7 +26,12 @@
       "description": "При нажатии на кнопку вылетает ошибка 500. Проверить логи в payment-service. Скорее всего, проблема в обработке промокода.",
       "assignee": "intern_ivan",
       "type": "Bug",
-      "created_at": "2026-11-03"
+      "created_at": "2026-11-03",
+      "updated_at": "2026-11-03T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-03T08:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-03T10:00:00Z"}
+      ]
     },
     {
       "id": "AVT-556",
@@ -28,7 +41,11 @@
       "description": "Добавить логи при успешном и неуспешном логине. Использовать библиотеку zap.",
       "assignee": "intern_ivan",
       "type": "Task",
-      "created_at": "2026-11-05"
+      "created_at": "2026-11-05",
+      "updated_at": "2026-11-05T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-05T09:00:00Z"}
+      ]
     },
     {
       "id": "AVT-557",
@@ -38,7 +55,13 @@
       "description": "Дописать в Confluence шаги по откату (rollback) релиза.",
       "assignee": "intern_ivan",
       "type": "Documentation",
-      "created_at": "2026-11-06"
+      "created_at": "2026-11-06",
+      "updated_at": "2026-11-07T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-06T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-06T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-07T10:00:00Z"}
+      ]
     },
     {
       "id": "AVT-558",
@@ -48,7 +71,12 @@
       "description": "Использовать компоненты из Figma-библиотеки Авито. Проверить адаптивность на мобильных устройствах.",
       "assignee": "intern_anna",
       "type": "Feature",
-      "created_at": "2026-11-02"
+      "created_at": "2026-11-02",
+      "updated_at": "2026-11-02T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-02T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-02T10:00:00Z"}
+      ]
     },
     {
       "id": "AVT-559",
@@ -58,7 +86,11 @@
       "description": "На iOS устройствах текст в карточке 'Объявление' съезжает. Проблема в CSS-свойстве line-height.",
       "assignee": "intern_anna",
       "type": "Bug",
-      "created_at": "2026-11-07"
+      "created_at": "2026-11-07",
+      "updated_at": "2026-11-07T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-07T09:00:00Z"}
+      ]
     },
     {
       "id": "AVT-560",
@@ -68,7 +100,12 @@
       "description": "Добавить кэширование для запросов в сервис объявлений. TTL установить 5 минут.",
       "assignee": "intern_oleg",
       "type": "Task",
-      "created_at": "2026-11-04"
+      "created_at": "2026-11-04",
+      "updated_at": "2026-11-04T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-04T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-04T10:00:00Z"}
+      ]
     },
     {
       "id": "AVT-561",
@@ -78,7 +115,11 @@
       "description": "Покрыть тестами эндпоинты /api/v1/items. Проверить успешные ответы и ошибочные кейсы.",
       "assignee": "intern_oleg",
       "type": "Testing",
-      "created_at": "2026-11-08"
+      "created_at": "2026-11-08",
+      "updated_at": "2026-11-08T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-08T09:00:00Z"}
+      ]
     },
     {
       "id": "AVT-562",
@@ -88,7 +129,11 @@
       "description": "Собрать результаты по закрытым задачам, оформить по шаблону Авито, согласовать с бадди.",
       "assignee": "intern_ivan",
       "type": "Documentation",
-      "created_at": "2026-11-09"
+      "created_at": "2026-11-09",
+      "updated_at": "2026-11-09T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-09T09:00:00Z"}
+      ]
     },
     {
       "id": "AVT-563",
@@ -98,7 +143,236 @@
       "description": "Проверить PR стажера в ветке feature/promo-fix. Оставить комментарии.",
       "assignee": "intern_anna",
       "type": "Task",
-      "created_at": "2026-11-09"
+      "created_at": "2026-11-09",
+      "updated_at": "2026-11-10T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-09T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-09T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-10T10:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-564",
+      "title": "Починить критический баг оплаты на Android",
+      "status": "Done",
+      "priority": "Blocker",
+      "description": "Краш при оплате через Google Pay. Воспроизводится на 30% устройств.",
+      "assignee": "intern_anna",
+      "type": "Bug",
+      "created_at": "2026-11-02",
+      "updated_at": "2026-11-10T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-02T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-02T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-09T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-10T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-565",
+      "title": "Обновить README проекта",
+      "status": "Done",
+      "priority": "Low",
+      "description": "Добавить раздел про локальный запуск и переменные окружения.",
+      "assignee": "intern_oleg",
+      "type": "Task",
+      "created_at": "2026-11-01",
+      "updated_at": "2026-11-05T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-01T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-02T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-04T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-05T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-566",
+      "title": "Добавить health-check эндпоинт",
+      "status": "Done",
+      "priority": "Medium",
+      "description": "Эндпоинт /health для проверки живости сервиса.",
+      "assignee": "intern_ivan",
+      "type": "Bug",
+      "created_at": "2026-11-01",
+      "updated_at": "2026-11-10T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-01T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-02T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-09T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-10T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-567",
+      "title": "Проверить логи payment-service",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Найти причину 500 при оплате. В норме — не должен быть STUCK.",
+      "assignee": "intern_oleg",
+      "type": "Bug",
+      "created_at": "2026-11-13",
+      "updated_at": "2026-11-13T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-13T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-13T10:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-568",
+      "title": "Запросить доступ к новому репозиторию",
+      "status": "Blocked",
+      "priority": "High",
+      "description": "Статус Blocked не маппится на этап — проверка unknown_status.",
+      "assignee": "intern_ivan",
+      "type": "Task",
+      "created_at": "2026-11-12",
+      "updated_at": "2026-11-12T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-12T09:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-569",
+      "title": "Настроить Xcode на локальной машине",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Установить зависимости, собрать проект, запустить на симуляторе.",
+      "assignee": "intern_maria",
+      "type": "Task",
+      "created_at": "2026-11-11",
+      "updated_at": "2026-11-11T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-11T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-11T10:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-570",
+      "title": "Изучить дизайн-систему",
+      "status": "To Do",
+      "priority": "Medium",
+      "description": "Прочитать документацию по дизайн-системе, запросить доступ.",
+      "assignee": "intern_maria",
+      "type": "Bug",
+      "created_at": "2026-11-12",
+      "updated_at": "2026-11-12T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-12T09:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-571",
+      "title": "Настроить CI для проекта",
+      "status": "Done",
+      "priority": "High",
+      "description": "GitHub Actions: линт, тесты, сборка.",
+      "assignee": "intern_dmitry",
+      "type": "Task",
+      "created_at": "2026-11-02",
+      "updated_at": "2026-11-06T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-02T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-03T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-05T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-06T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-572",
+      "title": "Разобраться с ошибкой в логах",
+      "status": "In Progress",
+      "priority": "Medium",
+      "description": "В норме — не должен быть STUCK (создан сегодня).",
+      "assignee": "intern_dmitry",
+      "type": "Bug",
+      "created_at": "2026-11-13",
+      "updated_at": "2026-11-13T10:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-13T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-13T10:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-573",
+      "title": "Починить падение приложения при старте",
+      "status": "Done",
+      "priority": "Blocker",
+      "description": "Краш на iOS 17 при холодном старте.",
+      "assignee": "intern_olga",
+      "type": "Bug",
+      "created_at": "2026-11-01",
+      "updated_at": "2026-11-11T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-01T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-02T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-10T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-11T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-574",
+      "title": "Описать процесс релиза в Confluence",
+      "status": "To Do",
+      "priority": "Low",
+      "description": "Пошаговая инструкция: от мержа до продакшена.",
+      "assignee": "intern_olga",
+      "type": "Documentation",
+      "created_at": "2026-11-10",
+      "updated_at": "2026-11-10T09:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-10T09:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-575",
+      "title": "Добавить метрики в сервис",
+      "status": "Done",
+      "priority": "Medium",
+      "description": "Prometheus-метрики для ключевых эндпоинтов.",
+      "assignee": "intern_oleg",
+      "type": "Task",
+      "created_at": "2026-11-09",
+      "updated_at": "2026-11-12T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-09T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-10T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-11T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-12T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-576",
+      "title": "Исправить вёрстку на планшетах",
+      "status": "Done",
+      "priority": "High",
+      "description": "Карточка товара ломается на iPad.",
+      "assignee": "intern_maria",
+      "type": "Bug",
+      "created_at": "2026-11-09",
+      "updated_at": "2026-11-12T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-09T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-10T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-11T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-12T11:00:00Z"}
+      ]
+    },
+    {
+      "id": "AVT-577",
+      "title": "Обновить зависимости проекта",
+      "status": "Done",
+      "priority": "Low",
+      "description": "Поднять версии пакетов, прогнать тесты.",
+      "assignee": "intern_dmitry",
+      "type": "Task",
+      "created_at": "2026-11-09",
+      "updated_at": "2026-11-12T11:00:00Z",
+      "transitions": [
+        {"stage": "NOT_STARTED", "entered_at": "2026-11-09T09:00:00Z"},
+        {"stage": "IN_PROGRESS", "entered_at": "2026-11-10T10:00:00Z"},
+        {"stage": "ALMOST_DONE", "entered_at": "2026-11-11T10:00:00Z"},
+        {"stage": "DONE", "entered_at": "2026-11-12T11:00:00Z"}
+      ]
     }
   ]
 }

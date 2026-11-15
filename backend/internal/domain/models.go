@@ -42,6 +42,58 @@ type Intern struct {
 	Status          string   `json:"status"`
 	LastActive      string   `json:"last_active,omitempty"`
 	Blockers        []string `json:"blockers"`
+	Flags           []Flag   `json:"flags"`
+	Stuck           bool     `json:"stuck"`
+}
+
+type ScoreboardEntry struct {
+	InternID string `json:"intern_id"`
+	Name     string `json:"name"`
+	Points   int    `json:"points"`
+	Place    int    `json:"place"`
+	IsTop5   bool   `json:"is_top5"`
+}
+
+type Scoreboard struct {
+	Week    string            `json:"week"`
+	Entries []ScoreboardEntry `json:"entries"`
+}
+
+type Flag struct {
+	ID         string  `json:"id"`
+	InternID   string  `json:"intern_id"`
+	TaskID     string  `json:"task_id"`
+	Stage      string  `json:"stage"`
+	Type       string  `json:"type"`
+	Severity   string  `json:"severity"`
+	Reason     string  `json:"reason"`
+	CreatedAt  string  `json:"created_at"`
+	ResolvedAt *string `json:"resolved_at"`
+	ResolvedBy *string `json:"resolved_by"`
+}
+
+type StageTransition struct {
+	Stage     string    `json:"stage"`
+	EnteredAt time.Time `json:"entered_at"`
+}
+
+type TaskStages struct {
+	TaskID       string            `json:"task_id"`
+	CurrentStage string            `json:"current_stage"`
+	Transitions  []StageTransition `json:"transitions"`
+	Durations    map[string]*int64 `json:"durations"`
+}
+
+type StageMetric struct {
+	Stage            string  `json:"stage"`
+	AvgHours         float64 `json:"avg_hours"`
+	BaselineHours    float64 `json:"baseline_hours"`
+	DeviationPercent float64 `json:"deviation_percent"`
+}
+
+type InternMetrics struct {
+	InternID string        `json:"intern_id"`
+	Stages   []StageMetric `json:"stages"`
 }
 
 type Ticket struct {

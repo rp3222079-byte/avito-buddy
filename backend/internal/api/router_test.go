@@ -2,6 +2,9 @@ package api_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -134,6 +137,52 @@ type memoryPendingActions struct {
 	failTransitionTo string
 }
 
+type memoryFeatures struct {
+	flags []domain.Flag
+}
+
+func (m memoryFeatures) SyncJira(context.Context) (int, error) {
+	return 4, nil
+}
+
+func (m memoryFeatures) Scoreboard(context.Context) (domain.Scoreboard, error) {
+	return domain.Scoreboard{
+		Week: "2026-W46",
+		Entries: []domain.ScoreboardEntry{
+			{InternID: "intern_ivan", Name: "Иван Иванов", Points: 135, Place: 1, IsTop5: true},
+		},
+	}, nil
+}
+
+func (m memoryFeatures) TaskStages(_ context.Context, taskID string) (domain.TaskStages, error) {
+	if taskID != "AVT-555" {
+		return domain.TaskStages{}, domain.ErrNotFound
+	}
+	duration := int64(7200)
+	return domain.TaskStages{
+		TaskID:       taskID,
+		CurrentStage: "IN_PROGRESS",
+		Transitions: []domain.StageTransition{
+			{Stage: "NOT_STARTED", EnteredAt: time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
+			{Stage: "IN_PROGRESS", EnteredAt: time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)},
+		},
+		Durations: map[string]*int64{"NOT_STARTED": &duration, "IN_PROGRESS": nil},
+	}, nil
+}
+
+func (m memoryFeatures) Metrics(context.Context, string) (domain.InternMetrics, error) {
+	return domain.InternMetrics{
+		InternID: "intern_ivan",
+		Stages: []domain.StageMetric{
+			{Stage: "IN_PROGRESS", AvgHours: 2.5, BaselineHours: 2, DeviationPercent: 25},
+		},
+	}, nil
+}
+
+func (m memoryFeatures) Flags(context.Context, string) ([]domain.Flag, error) {
+	return append([]domain.Flag(nil), m.flags...), nil
+}
+
 func (m *memoryPendingActions) CreatePendingAction(_ context.Context, action *domain.PendingAction) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -203,6 +252,9 @@ func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
 	notifier := &memoryNotifier{sent: make(map[string]domain.Notification)}
 	briefings := &memoryBriefings{sent: make(map[string]bool)}
 	pendingActions := &memoryPendingActions{actions: make(map[string]*domain.PendingAction)}
+	features := memoryFeatures{flags: []domain.Flag{
+		{ID: "f-001", InternID: "intern_ivan", TaskID: "AVT-555", Stage: "IN_PROGRESS", Type: "STUCK", Severity: "high", Reason: "Таск просрочен", CreatedAt: "2026-11-03T11:00:00Z"},
+	}}
 
 	deps := api.Dependencies{
 		Sessions: &memorySessions{values: make(map[string]domain.Session)},
@@ -217,6 +269,7 @@ func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
 		Notifier:         notifier,
 		Briefings:        briefings,
 		PendingActions:   pendingActions,
+		Features:         features,
 		SessionTTL:       24 * time.Hour,
 		BriefingTTL:      48 * time.Hour,
 		PendingActionTTL: 10 * time.Minute,
@@ -228,6 +281,7 @@ func newRouterWith(configure ...func(*api.Dependencies)) http.Handler {
 			"intern_anna":  domain.RoleIntern,
 			"mentor_smith": domain.RoleMentor,
 		},
+		DemoMode: true,
 	}
 	for _, apply := range configure {
 		apply(&deps)
@@ -281,6 +335,18 @@ func TestSessionAllowsKnownIdentityAndTasksUseIt(t *testing.T) {
 	}
 	if len(body.Tasks) != 1 || body.Tasks[0].ID != "AVT-555" {
 		t.Fatalf("tasks = %#v, want only AVT-555", body.Tasks)
+	}
+}
+
+func TestSessionIsUnavailableOutsideDemoMode(t *testing.T) {
+	router := newRouterWith(func(deps *api.Dependencies) { deps.DemoMode = false })
+	request := httptest.NewRequest(http.MethodPost, "/api/session", strings.NewReader(`{"user_id":"intern_ivan","role":"intern"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "demo_mode_disabled") {
+		t.Fatalf("status/body = %d/%s", response.Code, response.Body.String())
 	}
 }
 
@@ -396,6 +462,123 @@ func TestMentorReadsOnlyOwnInterns(t *testing.T) {
 	if len(body.Interns) != 1 || body.Interns[0].InternID != "intern_ivan" {
 		t.Fatalf("interns = %#v", body.Interns)
 	}
+	if !body.Interns[0].Stuck || body.Interns[0].Status != "blocked" || len(body.Interns[0].Flags) != 1 || len(body.Interns[0].Blockers) != 1 {
+		t.Fatalf("enriched intern = %#v", body.Interns[0])
+	}
+}
+
+func TestMentorInternStatusAndBlockersAreDerivedFromActiveFlags(t *testing.T) {
+	resolvedAt := "2026-11-14T10:00:00Z"
+	router := newRouterWith(func(deps *api.Dependencies) {
+		deps.Mentors = memoryMentors{interns: map[string][]domain.Intern{
+			"mentor_smith": {
+				{InternID: "high", Name: "High", ProgressPercent: 90},
+				{InternID: "medium", Name: "Medium", ProgressPercent: 90},
+				{InternID: "slow", Name: "Slow", ProgressPercent: 29},
+				{InternID: "healthy", Name: "Healthy", ProgressPercent: 30},
+			},
+		}}
+		deps.Features = memoryFeatures{flags: []domain.Flag{
+			{ID: "high-active", InternID: "high", Severity: "high", Reason: "Критический blocker"},
+			{ID: "medium-active", InternID: "medium", Severity: "medium", Reason: "Есть риск"},
+			{ID: "resolved", InternID: "healthy", Severity: "high", Reason: "Уже решено", ResolvedAt: &resolvedAt},
+		}}
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/mentor/interns", nil)
+	request.AddCookie(login(t, router, "mentor_smith", domain.RoleMentor))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	var body struct {
+		Interns []domain.Intern `json:"interns"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || len(body.Interns) != 4 {
+		t.Fatalf("status/interns = %d/%#v", response.Code, body.Interns)
+	}
+	if body.Interns[0].Status != "blocked" || !body.Interns[0].Stuck || len(body.Interns[0].Blockers) != 1 {
+		t.Fatalf("high intern = %#v", body.Interns[0])
+	}
+	if body.Interns[1].Status != "at_risk" || !body.Interns[1].Stuck {
+		t.Fatalf("medium intern = %#v", body.Interns[1])
+	}
+	if body.Interns[2].Status != "at_risk" || body.Interns[2].Stuck {
+		t.Fatalf("slow intern = %#v", body.Interns[2])
+	}
+	if body.Interns[3].Status != "on_track" || body.Interns[3].Stuck || len(body.Interns[3].Flags) != 0 {
+		t.Fatalf("healthy intern = %#v", body.Interns[3])
+	}
+}
+
+func TestMVPFeatureEndpoints(t *testing.T) {
+	router := newRouter()
+
+	syncResponse := httptest.NewRecorder()
+	router.ServeHTTP(syncResponse, httptest.NewRequest(http.MethodPost, "/sync/jira", nil))
+	if syncResponse.Code != http.StatusOK || syncResponse.Body.String() != `{"status":"success","updated":4}` {
+		t.Fatalf("sync status/body = %d/%s", syncResponse.Code, syncResponse.Body.String())
+	}
+
+	scoreboardResponse := httptest.NewRecorder()
+	router.ServeHTTP(scoreboardResponse, httptest.NewRequest(http.MethodGet, "/scoreboard?week=2026-W45", nil))
+	var scoreboard domain.Scoreboard
+	if err := json.Unmarshal(scoreboardResponse.Body.Bytes(), &scoreboard); err != nil {
+		t.Fatal(err)
+	}
+	if scoreboardResponse.Code != http.StatusOK || scoreboard.Week != "2026-W46" || len(scoreboard.Entries) != 1 || !scoreboard.Entries[0].IsTop5 {
+		t.Fatalf("scoreboard = %#v, status = %d", scoreboard, scoreboardResponse.Code)
+	}
+
+	stagesResponse := httptest.NewRecorder()
+	router.ServeHTTP(stagesResponse, httptest.NewRequest(http.MethodGet, "/tasks/AVT-555/stages", nil))
+	var stages domain.TaskStages
+	if err := json.Unmarshal(stagesResponse.Body.Bytes(), &stages); err != nil {
+		t.Fatal(err)
+	}
+	if stagesResponse.Code != http.StatusOK || stages.CurrentStage != "IN_PROGRESS" || *stages.Durations["NOT_STARTED"] != 7200 || stages.Durations["IN_PROGRESS"] != nil {
+		t.Fatalf("stages = %#v, status = %d", stages, stagesResponse.Code)
+	}
+
+	missingResponse := httptest.NewRecorder()
+	router.ServeHTTP(missingResponse, httptest.NewRequest(http.MethodGet, "/tasks/AVT-404/stages", nil))
+	if missingResponse.Code != http.StatusNotFound {
+		t.Fatalf("missing task status = %d", missingResponse.Code)
+	}
+
+	metricsResponse := httptest.NewRecorder()
+	router.ServeHTTP(metricsResponse, httptest.NewRequest(http.MethodGet, "/interns/ignored/metrics", nil))
+	var metrics domain.InternMetrics
+	if err := json.Unmarshal(metricsResponse.Body.Bytes(), &metrics); err != nil {
+		t.Fatal(err)
+	}
+	if metricsResponse.Code != http.StatusOK || metrics.InternID != "intern_ivan" || len(metrics.Stages) != 1 {
+		t.Fatalf("metrics = %#v, status = %d", metrics, metricsResponse.Code)
+	}
+
+	flagsResponse := httptest.NewRecorder()
+	router.ServeHTTP(flagsResponse, httptest.NewRequest(http.MethodGet, "/flags?mentor_id=mentor_smith", nil))
+	var flags struct {
+		Flags []domain.Flag `json:"flags"`
+	}
+	if err := json.Unmarshal(flagsResponse.Body.Bytes(), &flags); err != nil {
+		t.Fatal(err)
+	}
+	if flagsResponse.Code != http.StatusOK || len(flags.Flags) != 1 || flags.Flags[0].ID != "f-001" {
+		t.Fatalf("flags = %#v, status = %d", flags.Flags, flagsResponse.Code)
+	}
+
+	resolveResponse := httptest.NewRecorder()
+	router.ServeHTTP(resolveResponse, httptest.NewRequest(http.MethodPatch, "/flags/f-001/resolve", nil))
+	if resolveResponse.Code != http.StatusOK || resolveResponse.Body.String() != `{"status":"success"}` {
+		t.Fatalf("resolve status/body = %d/%s", resolveResponse.Code, resolveResponse.Body.String())
+	}
+	flagsAfterResolve := httptest.NewRecorder()
+	router.ServeHTTP(flagsAfterResolve, httptest.NewRequest(http.MethodGet, "/flags", nil))
+	if flagsAfterResolve.Code != http.StatusOK || flagsAfterResolve.Body.String() != flagsResponse.Body.String() {
+		t.Fatalf("flags changed after resolve: before=%s after=%s", flagsResponse.Body.String(), flagsAfterResolve.Body.String())
+	}
 }
 
 func TestRepeatedAccessRequestReturnsExistingTicket(t *testing.T) {
@@ -473,6 +656,26 @@ func TestNotificationIdempotency(t *testing.T) {
 	// Should return same result
 	if response.Body.String() != response2.Body.String() {
 		t.Fatalf("idempotency failed: %s vs %s", response.Body.String(), response2.Body.String())
+	}
+}
+
+func TestNotificationAcceptsIdempotencyHeader(t *testing.T) {
+	router := newRouter()
+	cookie := login(t, router, "intern_ivan", domain.RoleIntern)
+	send := func(message string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/notify-mentor", strings.NewReader(`{"message":"`+message+`"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "header-key-1")
+		request.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	first := send("Нужна помощь")
+	second := send("Другое сообщение")
+	if first.Code != http.StatusOK || first.Body.String() != second.Body.String() {
+		t.Fatalf("responses = %d/%s and %d/%s", first.Code, first.Body.String(), second.Code, second.Body.String())
 	}
 }
 
@@ -771,6 +974,13 @@ func TestChatProxyReplacesForgedIdentityHeaders(t *testing.T) {
 		if request.Header.Get("X-User-ID") != "intern_ivan" || request.Header.Get("X-User-Role") != "intern" {
 			t.Errorf("identity headers = %q/%q", request.Header.Get("X-User-ID"), request.Header.Get("X-User-Role"))
 		}
+		payload := "intern_ivan|intern|2026-11-11T09:00:00Z"
+		signature := hmac.New(sha256.New, []byte("request-secret"))
+		_, _ = signature.Write([]byte(payload))
+		expectedContext := payload + "." + hex.EncodeToString(signature.Sum(nil))
+		if request.Header.Get("X-Request-Context") != expectedContext {
+			t.Errorf("request context = %q, want %q", request.Header.Get("X-Request-Context"), expectedContext)
+		}
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{"reply":"ok"}`))
 	}))
@@ -779,6 +989,7 @@ func TestChatProxyReplacesForgedIdentityHeaders(t *testing.T) {
 	router := newRouterWith(func(deps *api.Dependencies) {
 		deps.AIBaseURL = upstream.URL
 		deps.HTTPClient = upstream.Client()
+		deps.RequestContextSecret = "request-secret"
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"message":"Привет"}`))
 	request.Header.Set("Content-Type", "application/json")

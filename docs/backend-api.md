@@ -26,6 +26,22 @@ export no_proxy=localhost,127.0.0.1
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
+## MVP-эндпоинты скорборда и STUCK
+
+Подробная инструкция по архитектуре и ручной проверке находится в
+[`backend-mvp-13-11.md`](backend-mvp-13-11.md).
+
+- `POST /sync/jira` — возвращает результат мок-синхронизации и `updated: 4`.
+- `GET /scoreboard?week=...` — отдаёт `mock_scoreboard.json`; параметр недели игнорируется.
+- `GET /tasks/{id}/stages` — отдаёт переходы и длительности этапов в секундах.
+- `GET /interns/{id}/metrics` — отдаёт `mock_ai_metrics_response.json`.
+- `GET /flags?mentor_id=...` — отдаёт `mock_flags.json`.
+- `PATCH /flags/{id}/resolve` — подтверждает локальное скрытие флага, не изменяя мок.
+
+Эти маршруты являются открытыми MVP-заглушками. Существующий защищённый
+`GET /api/mentor/interns` дополнительно возвращает активные `flags`, `stuck`,
+вычисленные `status` и `blockers`.
+
 Первый запуск RAG скачивает мультиязычную ONNX-модель размером около 220 МБ. Модель сохраняется в Docker volume `embedding_models`.
 AI-service требует запущенного Ollama с моделью `qwen3:8b` (по умолчанию на хосте).
 
@@ -41,18 +57,6 @@ AI-service требует запущенного Ollama с моделью `qwen3
 - `INTERNAL_TOKEN` и `X-Request-Context` **никогда не должны попадать в браузер** — они используются только для межсервисного взаимодействия (Go Backend ↔ AI-service).
 
 **Демо-пользователи (только для стенда):**
-| user_id | role |
-|---|---|
-| `intern_ivan` | `intern` |
-| `intern_anna` | `intern` |
-| `intern_oleg` | `intern` |
-| `intern_maria` | `intern` |
-| `mentor_smith` | `mentor` |
-
----
-
-## Демо-пользователи
-
 | user_id | role |
 |---|---|
 | `intern_ivan` | `intern` |
@@ -152,7 +156,9 @@ X-User-Role: intern
 
 Один только `X-User-ID` не даёт доступ. Значение `INTERNAL_TOKEN` должно совпадать у Go Backend и AI-service и не должно передаваться браузеру.
 
-AI-service также получает подписанный `X-Request-Context` для верификации доверенного контекста.
+AI-service также получает подписанный `X-Request-Context` и при заданном
+`REQUEST_CONTEXT_SECRET` проверяет подпись, совпадение пользователя и роли, а
+также возраст контекста. Значение secret должно совпадать у Backend и AI-service.
 
 ## Тесты
 

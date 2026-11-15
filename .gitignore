@@ -1,4 +1,7 @@
 node_modules/
+.venv/
+__pycache__/
+.pytest_cache/
 dist/
 coverage/
 *.tsbuildinfo
@@ -6,3 +9,4 @@ tmp/
 .env
 .env.*
 !.env.example
+backend/server

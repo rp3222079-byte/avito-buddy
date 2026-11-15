@@ -175,11 +175,11 @@ async function networkReply(request: ReplyRequest, signal: AbortSignal, onChunk:
     let text = '';
     for await (const { event, data } of readEvents(response.body)) {
       if (signal.aborted) throw signal.reason;
-      if (event !== 'delta' && event !== 'done' && event !== 'error') continue;
+      if (event !== 'token' && event !== 'done' && event !== 'error') continue;
       const payload: unknown = JSON.parse(data);
       if (!record(payload)) throw new Error('Сервис вернул некорректное событие чата.');
       if (event === 'error') throw new Error(typeof payload.message === 'string' && payload.message.trim() ? payload.message : 'Не удалось получить ответ Бадди.');
-      if (event === 'delta' && typeof payload.text === 'string') {
+      if (event === 'token' && typeof payload.text === 'string') {
         text += payload.text;
         onChunk(text);
       } else if (event === 'done') {

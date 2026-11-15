@@ -54,6 +54,14 @@ type PendingActionStore interface {
 	DeletePendingAction(context.Context, string) error
 }
 
+type FeatureStore interface {
+	SyncJira(context.Context) (int, error)
+	Scoreboard(context.Context) (domain.Scoreboard, error)
+	TaskStages(context.Context, string) (domain.TaskStages, error)
+	Metrics(context.Context, string) (domain.InternMetrics, error)
+	Flags(context.Context, string) ([]domain.Flag, error)
+}
+
 type Dependencies struct {
 	Sessions             SessionStore
 	Tasks                TaskStore
@@ -62,6 +70,7 @@ type Dependencies struct {
 	Notifier             Notifier
 	Briefings            BriefingStore
 	PendingActions       PendingActionStore
+	Features             FeatureStore
 	SessionTTL           time.Duration
 	BriefingTTL          time.Duration
 	PendingActionTTL     time.Duration
@@ -93,6 +102,12 @@ func NewRouter(deps Dependencies) http.Handler {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	router.POST("/api/session", createSession(deps))
+	router.POST("/sync/jira", syncJira(deps.Features))
+	router.GET("/scoreboard", getScoreboard(deps.Features))
+	router.GET("/tasks/:id/stages", getTaskStages(deps.Features))
+	router.GET("/interns/:id/metrics", getInternMetrics(deps.Features))
+	router.GET("/flags", getFlags(deps.Features))
+	router.PATCH("/flags/:id/resolve", resolveFlag())
 	authorized := router.Group("/api", authenticate(deps))
 	authorized.DELETE("/session", deleteSession(deps.Sessions))
 	authorized.GET("/jira/tasks", getTasks(deps.Tasks))
@@ -106,7 +121,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authorized.POST("/chat", proxyAI(deps, "/api/chat"))
 	authorized.POST("/chat/stream", proxyAI(deps, "/api/chat/stream"))
 	mentor := authorized.Group("/mentor", requireRole(domain.RoleMentor))
-	mentor.GET("/interns", getInterns(deps.Mentors))
+	mentor.GET("/interns", getInterns(deps.Mentors, deps.Features))
 	return router
 }
 
@@ -120,8 +135,8 @@ func cors(allowedOrigins []string) gin.HandlerFunc {
 		if _, ok := allowed[origin]; ok && origin != "" {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Accept")
-			c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Accept, Idempotency-Key")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			c.Header("Vary", "Origin")
 		}
 		if c.Request.Method == http.MethodOptions {
@@ -139,6 +154,10 @@ func createSession(deps Dependencies) gin.HandlerFunc {
 		Role   domain.Role `json:"role" binding:"required"`
 	}
 	return func(c *gin.Context) {
+		if !deps.DemoMode {
+			respondError(c, http.StatusServiceUnavailable, "demo_mode_disabled", "Демо-авторизация отключена")
+			return
+		}
 		var input request
 		if err := c.ShouldBindJSON(&input); err != nil {
 			respondError(c, http.StatusBadRequest, "invalid_request", "Некорректные данные сессии")
@@ -249,7 +268,7 @@ func requireRole(role domain.Role) gin.HandlerFunc {
 	}
 }
 
-func getInterns(store MentorStore) gin.HandlerFunc {
+func getInterns(store MentorStore, features FeatureStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := c.MustGet("session").(domain.Session)
 		interns, err := store.ForMentor(c.Request.Context(), session.UserID)
@@ -259,6 +278,14 @@ func getInterns(store MentorStore) gin.HandlerFunc {
 		}
 		if interns == nil {
 			interns = make([]domain.Intern, 0)
+		}
+		if features != nil {
+			flags, err := features.Flags(c.Request.Context(), session.UserID)
+			if err != nil {
+				respondError(c, http.StatusServiceUnavailable, "flags_unavailable", "Не удалось получить флаги стажёров")
+				return
+			}
+			interns = enrichInterns(interns, flags)
 		}
 		c.JSON(http.StatusOK, gin.H{"interns": interns})
 	}
@@ -306,7 +333,11 @@ func notifyMentor(notifier Notifier) gin.HandlerFunc {
 			return
 		}
 		session := c.MustGet("session").(domain.Session)
-		notification, err := notifier.Notify(c.Request.Context(), session.UserID, strings.TrimSpace(input.Message), input.IdempotencyKey)
+		idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		if idempotencyKey == "" {
+			idempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+		}
+		notification, err := notifier.Notify(c.Request.Context(), session.UserID, strings.TrimSpace(input.Message), idempotencyKey)
 		if err != nil {
 			respondError(c, http.StatusServiceUnavailable, "notification_unavailable", "Не удалось отправить уведомление наставнику")
 			return
@@ -575,7 +606,11 @@ func proxyAI(deps Dependencies, path string) gin.HandlerFunc {
 			request.Header.Set("X-Internal-Token", deps.InternalToken)
 		}
 		if deps.RequestContextSecret != "" {
-			ctxPayload := session.UserID + "|" + string(session.Role) + "|" + time.Now().UTC().Format(time.RFC3339)
+			now := time.Now
+			if deps.Now != nil {
+				now = deps.Now
+			}
+			ctxPayload := session.UserID + "|" + string(session.Role) + "|" + now().UTC().Format(time.RFC3339)
 			h := hmac.New(sha256.New, []byte(deps.RequestContextSecret))
 			h.Write([]byte(ctxPayload))
 			signature := hex.EncodeToString(h.Sum(nil))
