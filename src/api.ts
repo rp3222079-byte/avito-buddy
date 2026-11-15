@@ -15,9 +15,12 @@ export interface Intern {
 }
 export interface JiraTask { id: string; title: string; status: string; priority: string }
 export interface TicketData { ticket_id: string; status?: string; sla_hours: number }
-export type ChatAction =
+export type ButtonAction =
   | { type: 'button'; id: 'notify_mentor'; label: string; data?: { message: string } }
-  | { type: 'button'; id: 'create_access_ticket'; label: string; data: { system: string } }
+  | { type: 'button'; id: 'create_access_ticket'; label: string; data: { system: string; reason?: string } };
+export type ChatAction =
+  | ButtonAction
+  | { type: 'pending_action'; action: ButtonAction; pendingId: string }
   | { type: 'card'; kind: 'ticket'; data: TicketData };
 export interface ChatReply {
   reply: string;
@@ -27,7 +30,12 @@ export interface ChatReply {
 }
 
 export const mockMode = import.meta.env.VITE_API_MODE !== 'real';
-const chatPath = import.meta.env.VITE_CHAT_PATH || '/api/chat';
+const chatPath = import.meta.env.VITE_CHAT_PATH || '/api/chat/stream';
+export const demoIdentities = { intern: 'intern_ivan', mentor: mentorData.mentor_id };
+export const demoNames = {
+  intern: mentorData.interns.find(intern => intern.intern_id === demoIdentities.intern)?.name ?? 'Стажёр',
+  mentor: mentorData.mentor_name,
+};
 export const demoTasks = jiraData.tasks.filter(task => task.assignee === 'intern_ivan');
 export const demoInterns = mentorData.interns as Intern[];
 
@@ -52,7 +60,7 @@ function isTicket(value: unknown): value is TicketData {
     && (value.status === undefined || typeof value.status === 'string');
 }
 
-function isAction(value: unknown): value is ChatAction {
+function isAction(value: unknown): value is Exclude<ChatAction, { type: 'pending_action' }> {
   if (!record(value)) return false;
   if (value.type === 'card') return value.kind === 'ticket' && isTicket(value.data);
   if (value.type !== 'button' || typeof value.label !== 'string' || !value.label.trim()) return false;
@@ -60,7 +68,23 @@ function isAction(value: unknown): value is ChatAction {
     return value.data === undefined || (record(value.data) && typeof value.data.message === 'string' && !!value.data.message.trim());
   }
   return value.id === 'create_access_ticket' && record(value.data)
-    && typeof value.data.system === 'string' && !!value.data.system.trim();
+    && typeof value.data.system === 'string' && !!value.data.system.trim()
+    && (value.data.reason === undefined || typeof value.data.reason === 'string');
+}
+
+function parseAction(value: unknown): ChatAction[] {
+  if (isAction(value)) return [value];
+  if (!record(value) || value.type !== 'pending_action') return [];
+  const draft = record(value.data) ? value.data : value;
+  if (typeof draft.pending_id !== 'string' || !draft.pending_id) return [];
+  const action = {
+    type: 'button',
+    id: draft.action,
+    label: draft.action === 'notify_mentor' ? 'Напомнить наставнику' : 'Заявка на доступ',
+    data: draft.payload,
+  };
+  if (!isAction(action) || action.type !== 'button') return [];
+  return [{ type: 'pending_action', action, pendingId: draft.pending_id }];
 }
 
 function isIntern(value: unknown): value is Intern {
@@ -76,8 +100,11 @@ function isTask(value: unknown): value is JiraTask {
 }
 
 function httpError(response: Response): Error {
-  if (response.status === 401) return new Error('Сессия закончилась. Войди заново.');
+  if (response.status === 401) return new Error('Сессия недоступна. Обнови демосессию в меню профиля.');
   if (response.status === 403) return new Error('403 · Доступ запрещён.');
+  if (response.status === 404) return new Error('Запись не найдена или срок её действия истёк.');
+  if (response.status === 409) return new Error('Действие уже обработано или выполняется.');
+  if (response.status === 410) return new Error('Срок действия черновика истёк.');
   return new Error('Сервис временно недоступен.');
 }
 
@@ -89,17 +116,13 @@ function requestError(error: unknown, timeout: AbortSignal): Error {
   return error instanceof Error ? error : new Error('Сервис временно недоступен.');
 }
 
-async function request(path: string, signal?: AbortSignal, post?: { body: object; id: string }): Promise<unknown> {
+export async function request(path: string, signal?: AbortSignal, options: RequestInit = {}): Promise<unknown> {
   const timeout = AbortSignal.timeout(10000);
   try {
     const response = await fetch(path, {
       credentials: 'same-origin',
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-      ...(post && {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': post.id },
-        body: JSON.stringify(post.body),
-      }),
+      ...options,
     });
     if (!response.ok) throw httpError(response);
     if (response.status === 204) return;
@@ -107,6 +130,25 @@ async function request(path: string, signal?: AbortSignal, post?: { body: object
   } catch (error) {
     throw requestError(error, timeout);
   }
+}
+
+function post(body: object, id?: string): RequestInit {
+  return {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(id && { 'Idempotency-Key': id }) },
+    body: JSON.stringify(body),
+  };
+}
+
+export async function openSession(role: Role, signal: AbortSignal) {
+  const session = await request('/api/session', signal, post({ role, user_id: demoIdentities[role] }));
+  if (!record(session) || session.role !== role || session.user_id !== demoIdentities[role]) {
+    throw new Error('Сервер не подтвердил демосессию.');
+  }
+}
+
+export async function closeSession() {
+  await request('/api/session', undefined, { method: 'DELETE' });
 }
 
 export async function getInterns(signal: AbortSignal): Promise<Intern[]> {
@@ -160,13 +202,15 @@ type ReplyRequest = { text: string; role: Role; state: DemoState; intern?: Inter
 type Reply = Omit<Message, 'id' | 'role'>;
 
 async function networkReply(request: ReplyRequest, signal: AbortSignal, onChunk: (text: string) => void): Promise<Reply> {
-  const timeout = AbortSignal.timeout(60_000);
+  const timeout = AbortSignal.timeout(150_000);
   try {
     const response = await fetch(chatPath, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json', 'Idempotency-Key': request.id },
-      body: JSON.stringify({ message: request.text, ...(request.intern && { intern_id: request.intern.intern_id }) }),
+      body: JSON.stringify({
+        message: request.intern ? `Вопрос о стажёре ${request.intern.name}. ${request.text}` : request.text,
+      }),
       signal: AbortSignal.any([signal, timeout]),
     });
     if (!response.ok) throw httpError(response);
@@ -184,7 +228,7 @@ async function networkReply(request: ReplyRequest, signal: AbortSignal, onChunk:
         onChunk(text);
       } else if (event === 'done') {
         if (typeof payload.reply === 'string') text = payload.reply;
-        const actions = Array.isArray(payload.actions) ? payload.actions.filter(isAction) : [];
+        const actions = Array.isArray(payload.actions) ? payload.actions.flatMap(parseAction) : [];
         const sources = Array.isArray(payload.sources) ? payload.sources.filter(
           (item): item is { source: string } => record(item) && typeof item.source === 'string',
         ) : [];
@@ -235,13 +279,23 @@ export function streamReply(
   return () => clearTimeout(timer);
 }
 
-export async function notifyMentor(message: string, id: string): Promise<void> {
-  if (!mockMode) await request('/api/notify-mentor', undefined, { body: { message }, id });
+export async function prepareAction(action: ButtonAction, id: string): Promise<string> {
+  const payload = action.id === 'notify_mentor'
+    ? { message: action.data?.message ?? 'Пожалуйста, проверь мои задачи по онбордингу.' }
+    : action.data;
+  const result = await request('/api/pending-action', undefined, post({ action: action.id, payload }, id));
+  if (!record(result) || typeof result.pending_id !== 'string' || !result.pending_id || result.status !== 'pending') {
+    throw new Error('Сервис вернул некорректный черновик.');
+  }
+  return result.pending_id;
 }
 
-export async function createAccessTicket(system: string, id: string): Promise<TicketData> {
-  if (mockMode) return { ticket_id: 'REQ-042', status: 'Создана', sla_hours: 2 };
-  const data = await request('/api/jira/ticket', undefined, { body: { system }, id });
-  if (!isTicket(data)) throw new Error('Сервис вернул некорректные данные заявки.');
-  return data;
+export async function finishAction(action: ButtonAction, pendingId: string, cancel: boolean): Promise<TicketData | undefined> {
+  const result = await request(`/api/pending-action/${cancel ? 'cancel' : 'confirm'}`, undefined, post({ pending_id: pendingId }));
+  if (cancel || action.id === 'notify_mentor') return;
+  if (record(result)) {
+    const ticket = { ticket_id: result.request_id, status: result.status, sla_hours: result.sla_hours };
+    if (isTicket(ticket)) return ticket;
+  }
+  throw new Error('Сервис вернул некорректные данные заявки.');
 }

@@ -157,7 +157,7 @@ describe('interactive demo', () => {
     fireEvent.change(screen.getByLabelText('Сортировка'), { target: { value: 'progress-asc' } });
     const table = within(screen.getByRole('table'));
     const interns = table.getAllByRole('rowheader');
-    expect(interns.map(row => row.textContent)).toEqual(['Анна Петрова', 'Мария Козлова', 'Олег Смирнов', 'Ольга Новикова']);
+    expect(interns.map(row => within(row).getByRole('button', { name: /^Открыть чат/ }).textContent)).toEqual(['Анна Петрова', 'Мария Козлова', 'Олег Смирнов', 'Ольга Новикова']);
     click('Открыть чат · Мария Козлова');
     expect(screen.getByRole('heading', { name: 'Мария Козлова' })).toHaveFocus();
     fireEvent.change(screen.getByLabelText('Сообщение Бадди'), { target: { value: 'Как успехи?' } });

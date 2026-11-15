@@ -1,14 +1,17 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { ArrowRight, BarChart3, Bell, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, KeyRound, ListChecks, LoaderCircle, MessageCircle, Pencil, RotateCcw, ShieldCheck, Sparkles, SquareCheck, Sun, Users, X } from 'lucide-react';
+import { ArrowRight, BarChart3, Bell, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, KeyRound, ListChecks, LoaderCircle, Medal, MessageCircle, Pencil, RotateCcw, ShieldCheck, Sparkles, SquareCheck, Sun, Users, X } from 'lucide-react';
 import { articles, getLevel, getXP, initialState, loadState, quests, reducer, saveState } from './model';
 import type { ArticleId, Message } from './model';
 import MentorDashboard from './MentorDashboard';
 import Modal from './Modal';
-import { getTasks, mockMode, streamReply } from './api';
+import { closeSession, demoIdentities, demoNames, getTasks, mockMode, openSession, streamReply } from './api';
 import type { Intern, Role } from './api';
 import { ChatInput } from './ChatInput';
-import { ChatMessage, MessageList, StreamingMessage } from './ChatMessage';
+import { ActionButton, ChatMessage, MessageList, StreamingMessage } from './ChatMessage';
 import { useResource } from './useResource';
+import { FlagBadge, Scoreboard, TaskStepper } from './OnboardingDetails';
+import { getFlags, getScoreboard, syncJira } from './onboardingApi';
+import type { StuckFlag } from './onboardingApi';
 type Dialog = 'library' | 'demo' | 'reset' | 'edit' | 'team' | null;
 const internPrompts = [
   { label: 'Утренний брифинг', text: 'Покажи утренний брифинг', icon: Sun },
@@ -29,20 +32,35 @@ function BuddyArt({ pose }: { pose: 'wave' | 'avatar' | 'laptop' }) {
   </span>;
 }
 
-function JiraTasks({ headingRef }: { headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+function JiraTasks({ headingRef, flags }: { headingRef?: React.RefObject<HTMLHeadingElement | null>; flags?: StuckFlag[] }) {
   const { items, error, retry } = useResource(getTasks);
+  const [expanded, setExpanded] = useState<string | null>(null);
   return <section className="panel module">
     <h2 ref={headingRef} tabIndex={-1}>Мои задачи</h2>
     {error ? <div role="alert">{error} <button className="secondary-button" onClick={retry}>Повторить загрузку</button></div>
       : !items ? <p role="status">Загружаем задачи…</p>
       : !items.length ? <p>У тебя нет активных задач.</p>
-      : <ul className="task-list">{items.map(item => <li key={item.id}>{item.id} · {item.title} · {item.status}</li>)}</ul>}
+      : <ul className="task-list jira-list">{items.map(item => <li key={item.id}>
+        <button type="button" aria-expanded={expanded === item.id} onClick={() => setExpanded(expanded === item.id ? null : item.id)}>
+          <span><strong>{item.id}</strong> · {item.title}<small>{item.status}</small></span><ChevronDown size={16} aria-hidden="true"/>
+        </button>
+        {flags?.filter(flag => flag.task_id === item.id).map(flag => <FlagBadge key={flag.id} flag={flag}/>)}
+        {expanded === item.id && <TaskStepper id={item.id}/>}
+      </li>)}</ul>}
   </section>;
 }
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, () => mockMode ? loadState() : { ...initialState(), messages: [], completed: [] });
   const [role, setRole] = useState<Role>('intern');
+  const [sessionAttempt, setSessionAttempt] = useState(0);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionError, setSessionError] = useState('');
+  const currentSession = useRef<Role | null>(null);
+  const scoreboard = useResource(getScoreboard);
+  const flags = useResource(getFlags);
+  const [hiddenFlags, setHiddenFlags] = useState<string[]>([]);
+  const [showJira, setShowJira] = useState(false);
   const [mentorMessages, setMentorMessages] = useState<Message[]>(mockMode ? [firstMentorMessage] : []);
   const [threads, setThreads] = useState<Record<string, Message[]>>({});
   const [selectedIntern, setSelectedIntern] = useState<Intern | null>(null);
@@ -72,8 +90,29 @@ export default function App() {
   const isIntern = role === 'intern';
   const messages = selectedIntern ? threads[selectedIntern.intern_id] ?? [] : isIntern ? state.messages : mentorMessages;
   const pendingTasks = quests.length - state.completed.length;
+  const activeFlags = flags.items?.filter(flag => !flag.resolved_at && !hiddenFlags.includes(flag.id));
+  const leaders = new Set(scoreboard.items?.entries.filter(entry => entry.is_top5).map(entry => entry.intern_id));
 
   useEffect(() => { if (mockMode) setSaveError(!saveState(state)); }, [state]);
+  useEffect(() => {
+    if (mockMode) return;
+    const controller = new AbortController();
+    async function connect() {
+      if (currentSession.current) {
+        await closeSession().catch(() => undefined);
+        currentSession.current = null;
+      }
+      if (controller.signal.aborted) return;
+      await openSession(role, controller.signal);
+      if (controller.signal.aborted) return;
+      currentSession.current = role;
+      setSessionReady(true);
+    }
+    connect().catch((error: Error) => {
+      if (!controller.signal.aborted) setSessionError(error.message);
+    });
+    return () => controller.abort();
+  }, [role, sessionAttempt]);
   useEffect(() => { chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight }); }, [messages, busy, partial, role]);
   useEffect(() => {
     function updateRoute() { setRoute(window.location.hash); }
@@ -165,6 +204,8 @@ export default function App() {
     dispatch({ type: 'reset' });
     setMentorMessages([firstMentorMessage]);
     setThreads({});
+    setHiddenFlags([]);
+    setShowJira(false);
     setSelectedIntern(null);
     setPartial('');
     setChatError(null);
@@ -210,13 +251,34 @@ export default function App() {
       setBusy(null);
     }
     setRole(next);
+    setSessionReady(false);
+    setSessionError('');
     setSelectedIntern(null);
     setChatError(null);
     setInput('');
     navigate(next === 'mentor' ? '#mentor' : '#chat');
   }
 
-  const avatar = isIntern ? <img src="/assets/roman-avatar.png" alt=""/> : <span className="initial-avatar">А</span>;
+  function renewSession() {
+    stopReply.current?.();
+    stopReply.current = null;
+    locked.current = false;
+    setPartial('');
+    setBusy(null);
+    setSessionReady(false);
+    setSessionError('');
+    setSessionAttempt(attempt => attempt + 1);
+  }
+
+  if (!mockMode && !sessionReady) return <main className="panel resource-state session-state">
+    <h1>Avito Start</h1>
+    {sessionError
+      ? <><p role="alert">{sessionError}</p><button className="primary-button" onClick={renewSession}>Повторить вход</button></>
+      : <p role="status">Открываем демосессию…</p>}
+  </main>;
+
+  const profileName = mockMode ? (isIntern ? 'Роман' : 'Анна') : demoNames[role];
+  const avatar = isIntern && mockMode ? <img src="/assets/roman-avatar.png" alt=""/> : <span className="initial-avatar">{profileName[0]}</span>;
 
   return <div className="app-shell">
     <header className="topbar">
@@ -231,10 +293,11 @@ export default function App() {
       <div className="header-actions">
         {mockMode && !selectedIntern && <button className="icon-button notification" aria-label={isIntern ? 'Утренний брифинг в чате' : 'Сводка по стажёрам в чате'} disabled={!!busy} onClick={() => { send(isIntern ? internPrompts[0].text : mentorPrompts[0].text); chatHeading.current?.focus(); }}><Bell size={22}/></button>}
         <details className="profile">
-          <summary aria-label={isIntern ? 'Меню профиля Романа' : 'Меню профиля Анны'}>{avatar}<span className="profile-copy"><strong>{isIntern ? 'Роман' : 'Анна'}</strong>
+          <summary aria-label={mockMode ? (isIntern ? 'Меню профиля Романа' : 'Меню профиля Анны') : `Меню профиля · ${profileName}`}>{avatar}<span className="profile-copy"><strong>{profileName}</strong>
             {isIntern && mockMode ? <><small>Уровень {level} · <span>{xp} / {level * 200} XP</span></small><span className="xp-track"><span style={{ width: `${xp / (level * 2)}%` }}/></span></> : <small>{isIntern ? 'Стажёр' : 'Наставник'}</small>}
-          </span><ChevronDown size={16}/></summary>
+          </span>{isIntern && !mockMode && leaders.has(demoIdentities.intern) && <Medal size={18} className="profile-medal" role="img" aria-label="Входит в топ-5"/>}<ChevronDown size={16}/></summary>
           {mockMode && <div className="profile-menu"><button onClick={() => setDialog('reset')}><RotateCcw size={16}/>Начать демо заново</button></div>}
+          {!mockMode && <div className="profile-menu"><button onClick={renewSession}><RotateCcw size={16}/>Обновить демосессию</button></div>}
         </details>
       </div>
     </header>
@@ -259,7 +322,7 @@ export default function App() {
       <section id="chat" className="chat-panel panel" aria-label="Чат с Бадди">
         <div className="chat-header">
           <span className="buddy-avatar"><BuddyArt pose="avatar"/></span>
-          <div><h1 ref={chatHeading} tabIndex={-1}>{selectedIntern?.name ?? 'Бадди'}</h1>
+          <div><h1 ref={chatHeading} tabIndex={-1}>{selectedIntern ? (mockMode ? selectedIntern.name : `Бадди · ${selectedIntern.name}`) : 'Бадди'}</h1>
             {mockMode && <p>{selectedIntern ? 'Демопереписка' : <><span className="online-dot"/>Онлайн</>}</p>}
           </div>
         </div>
@@ -281,9 +344,10 @@ export default function App() {
           {chatError && <div className="resource-state" role="alert">{chatError.message} <button className="secondary-button" onClick={() => send(chatError.text, role, chatError.id)}>Повторить отправку</button></div>}
         </MessageList>
         <div className="chat-composer">
-          {mockMode && !selectedIntern && <div className="quick-replies">{(isIntern ? internPrompts : mentorPrompts).map(({ label, text, icon: Icon }) =>
+          {!selectedIntern && <div className="quick-replies">{(isIntern ? (mockMode ? internPrompts : internPrompts.slice(0, 2)) : mentorPrompts).map(({ label, text, icon: Icon }) =>
             <button key={label} disabled={!!busy} onClick={() => send(text)}><Icon size={14}/>{label}</button>)}</div>}
           <ChatInput input={input} busy={!!busy} onChange={setInput} onSend={() => send(input)}/>
+          {!mockMode && isIntern && <ActionButton action={{ type: 'button', id: 'create_access_ticket', label: 'Подготовить заявку', data: { system: 'jira' } }}/>}
         </div>
       </section>
 
@@ -312,7 +376,22 @@ export default function App() {
           <div className="module-title"><span><BookOpen size={20}/></span><h2>База знаний</h2><small>{Object.keys(articles).length} статьи</small></div>
           <div><button onClick={() => openArticle('access')}>Доступы</button><button onClick={() => openArticle('team')}>Процессы</button><button onClick={() => setDialog('library')}>Все статьи</button></div>
         </section>
-      </aside> : <JiraTasks headingRef={tasksRef}/> : <MentorDashboard state={state} headingRef={dashboardRef} approve={() => dispatch({ type: 'approve' })} openChat={openChat}/>}
+        <section className="panel module">
+          <button className="secondary-button" aria-expanded={showJira} onClick={() => setShowJira(!showJira)}>Задачи Jira<ChevronDown size={16}/></button>
+          {showJira && <JiraTasks flags={activeFlags}/>}
+        </section>
+      </aside> : <JiraTasks headingRef={tasksRef} flags={activeFlags}/> : <MentorDashboard
+        state={state} headingRef={dashboardRef} approve={() => dispatch({ type: 'approve' })} openChat={openChat}
+        allFlags={flags.items} hiddenFlags={hiddenFlags} flagError={flags.error} retryFlags={flags.retry} leaders={leaders}
+        onResolved={id => {
+          // The MVP endpoint acknowledges the action without mutating the fixture.
+          setHiddenFlags(current => [...current, id]);
+        }}>
+        <Scoreboard value={scoreboard.items} error={scoreboard.error} retry={scoreboard.retry} sync={async signal => {
+          const result = await syncJira(signal);
+          if (!signal.aborted) scoreboard.replace(result);
+        }}/>
+      </MentorDashboard>}
     </main>
 
     {saveError && <p className="save-warning" role="status">Прогресс не сохранён: хранилище недоступно.</p>}
