@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Crown, Medal, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Crown, Medal, RefreshCw } from 'lucide-react';
 import { getMetrics, getTaskStage, resolveFlag, stageLabels } from './onboardingApi';
 import type { getScoreboard, StuckFlag } from './onboardingApi';
 import { useResource } from './useResource';
@@ -8,11 +8,11 @@ export function Scoreboard({ value, error, retry, sync }: {
   value?: Awaited<ReturnType<typeof getScoreboard>>;
   error: string;
   retry: () => void;
-  sync: (signal: AbortSignal) => Promise<void>;
+  sync: (signal: AbortSignal) => Promise<number | undefined>;
 }) {
   const active = useRef<AbortController | null>(null);
   const [updating, setUpdating] = useState(false);
-  const [updated, setUpdated] = useState(false);
+  const [updated, setUpdated] = useState('');
   const [syncError, setSyncError] = useState('');
   useEffect(() => () => active.current?.abort(), []);
 
@@ -21,11 +21,13 @@ export function Scoreboard({ value, error, retry, sync }: {
     const controller = new AbortController();
     active.current = controller;
     setUpdating(true);
-    setUpdated(false);
+    setUpdated('');
     setSyncError('');
     try {
-      await sync(controller.signal);
-      if (!controller.signal.aborted) setUpdated(true);
+      const count = await sync(controller.signal);
+      if (!controller.signal.aborted) setUpdated(count === undefined
+        ? 'Рейтинг демо-недели обновлён.'
+        : `Рейтинг обновлён. Задач обработано при демо-синхронизации: ${count}.`);
     } catch (error) {
       if (!controller.signal.aborted) setSyncError(error instanceof Error ? error.message : 'Не удалось обновить рейтинг.');
     } finally {
@@ -36,14 +38,16 @@ export function Scoreboard({ value, error, retry, sync }: {
 
   const entries = value ? [...value.entries].sort((a, b) => a.place - b.place) : [];
   return <section className="onboarding-panel" aria-label="Рейтинг стажёров">
-    <div className="module-title"><span><Medal size={19}/></span><h3>Рейтинг недели</h3><small>{value?.week}</small></div>
-    <div className="action-controls">
+    <div className="scoreboard-header">
+      <div className="module-title">
+        <span><Medal size={19}/></span><div><h3>Рейтинг недели</h3>{value && <p className="muted">Демо-неделя · {value.week}</p>}</div>
+      </div>
       <button className="secondary-button" onClick={refresh} disabled={updating || !value || !!error}>
-        <RefreshCw size={16} className={updating ? 'spin' : ''}/>{updating ? 'Обновляем…' : 'Обновить из Jira'}
+        <RefreshCw size={16} className={updating ? 'spin' : ''} aria-hidden="true"/>{updating ? 'Обновляем…' : 'Обновить из Jira'}
       </button>
-      {updated && <span role="status">Обновлено только что</span>}
     </div>
-    {syncError && <p className="error-note" role="alert">{syncError}</p>}
+    <p className="sync-status" role="status">{updating ? 'Обновляем данные Jira и рейтинг…' : updated}</p>
+    {syncError && <p className="error-note" role="alert">Рейтинг не обновился. {syncError}</p>}
     {error ? <p role="alert">{error} <button className="secondary-button" onClick={retry}>Повторить загрузку рейтинга</button></p>
       : !value ? <p role="status">Загружаем рейтинг…</p>
       : !entries.length ? <p>Рейтинг пока пуст.</p>
@@ -117,7 +121,7 @@ export function FlagBadge({ flag, onResolved }: { flag: StuckFlag; onResolved?: 
   }
 
   return <details className="flag-details">
-    <summary className="status-pill blocked"><AlertTriangle size={14} aria-hidden="true"/>Застрял · {flag.task_id}</summary>
+    <summary className="status-pill blocked"><AlertTriangle size={14} aria-hidden="true"/>Застрял · {flag.task_id}<ChevronDown size={15} aria-hidden="true"/></summary>
     <p>{flag.reason}</p>
     {onResolved && <button className="secondary-button" onClick={resolve} disabled={busy}>{busy ? 'Снимаем флаг…' : 'Пометить решённым'}</button>}
     {error && <p className="error-note" role="alert">{error}</p>}

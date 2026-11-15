@@ -50,11 +50,13 @@ export async function getScoreboard(signal: AbortSignal): Promise<Scoreboard> {
 }
 
 export async function syncJira(signal: AbortSignal) {
+  let updated: number | undefined;
   if (!mockMode) {
     const response = await request('/sync/jira', signal, { method: 'POST' });
-    if (!object(response) || response.status !== 'success') throw new Error('Не удалось обновить данные Jira.');
+    if (!object(response) || response.status !== 'success' || typeof response.updated !== 'number') throw new Error('Не удалось обновить данные Jira.');
+    updated = response.updated;
   }
-  return getScoreboard(signal);
+  return { scoreboard: await getScoreboard(signal), updated };
 }
 
 export async function getFlags(signal: AbortSignal): Promise<StuckFlag[]> {

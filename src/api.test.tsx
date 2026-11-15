@@ -25,6 +25,7 @@ it('loads server tasks, displays a server 403 and retries the mentor list', asyn
   vi.stubGlobal('fetch', request);
   const { default: App } = await import('./App');
   render(<App/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Мои задачи' }));
   expect(await screen.findByText(/AVT-1/)).toBeInTheDocument();
   expect(request).toHaveBeenCalledWith('/api/jira/tasks', expect.objectContaining({ credentials: 'same-origin' }));
   const internSession = request.mock.calls.findIndex(([path]) => path === '/api/session');
@@ -81,7 +82,7 @@ it('reads SSE over POST and confirms actions only after backend success', async 
   vi.stubGlobal('fetch', request);
   const { default: App } = await import('./App');
   render(<App/>);
-  await screen.findByText('У тебя нет активных задач.');
+  await screen.findByRole('button', { name: 'Утренний брифинг' });
   fireEvent.change(screen.getByLabelText('Сообщение Бадди'), { target: { value: 'Нужен доступ к Confluence' } });
   fireEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Поток ответа прервался');
@@ -112,6 +113,7 @@ it('reads SSE over POST and confirms actions only after backend success', async 
   expect(screen.queryByRole('heading', { name: 'Заявка IT-123' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }));
   expect(await screen.findByRole('heading', { name: 'Заявка IT-123' })).toBeInTheDocument();
+  expect(screen.getByText('Статус · Заявка создана')).toBeVisible();
   expect(screen.getByText('Срок обработки · 2 ч')).toBeInTheDocument();
   expect(request).toHaveBeenLastCalledWith('/api/pending-action/confirm', expect.objectContaining({
     method: 'POST', body: '{"pending_id":"create_access_ticket"}',
@@ -132,6 +134,7 @@ it('retries a failed session and cancels an existing pending action without conf
       expect(options.body).toBe('{"pending_id":"existing"}');
       return new Response(null, { status: 204 });
     }
+    if (path === '/api/pending-action') return Response.json({ pending_id: 'new-draft', status: 'pending' }, { status: 201 });
   });
   vi.stubGlobal('fetch', request);
   const { default: App } = await import('./App');
@@ -139,12 +142,16 @@ it('retries a failed session and cancels an existing pending action without conf
   expect(await screen.findByRole('alert')).toHaveTextContent('Сервис временно недоступен');
   expect(request.mock.calls.some(([path]) => path === '/api/jira/tasks')).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: 'Повторить вход' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Доступ к Jira' }));
-  await screen.findByRole('heading', { name: 'Черновик · доступ к jira' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Утренний брифинг' }));
+  await screen.findByRole('heading', { name: 'Черновик · доступ к Jira' });
   fireEvent.click(screen.getByRole('button', { name: 'Отменить' }));
   expect(await screen.findByText('Черновик отменён.')).toBeInTheDocument();
   expect(request.mock.calls.filter(([path]) => path.startsWith('/api/pending-action')).map(([path]) => path))
     .toEqual(['/api/pending-action/cancel']);
+  const prepare = screen.getByRole('button', { name: 'Подготовить новый черновик' });
+  expect(prepare).toHaveFocus();
+  fireEvent.click(prepare);
+  expect(await screen.findByRole('heading', { name: 'Черновик · доступ к Jira' })).toBeVisible();
 });
 
 it('refreshes the scoreboard, opens stages and metrics, and resolves STUCK locally', async () => {
@@ -155,10 +162,11 @@ it('refreshes the scoreboard, opens stages and metrics, and resolves STUCK local
   const scoreEntry = { place: 1, name: 'Иван Иванов', intern_id: 'intern_ivan', is_top5: true };
   const flag = { id: 'f-001', intern_id: 'intern_ivan', task_id: 'AVT-555', severity: 'high', resolved_at: null, reason: 'Задача без движения' };
   let scores = 0;
+  let syncCalls = 0;
   let resolveCalls = 0;
   const request = browserRequests(path => {
     if (path === '/scoreboard') return Response.json({ week: '2026-W46', entries: [{ ...scoreEntry, points: ++scores * 10 }] });
-    if (path === '/sync/jira') return sync;
+    if (path === '/sync/jira') return syncCalls++ ? sync : new Response(null, { status: 503 });
     if (path.startsWith('/flags?')) return Response.json({ flags: [flag] });
     if (path === '/flags/f-001/resolve') return resolveCalls++ ? Response.json({ status: 'success' }) : new Response(null, { status: 503 });
     if (path === '/api/jira/tasks') return Response.json({ tasks: [{ id: 'AVT-555', title: 'Задача', priority: 'Blocker', status: 'In Progress' }] });
@@ -173,22 +181,34 @@ it('refreshes the scoreboard, opens stages and metrics, and resolves STUCK local
   const { default: App } = await import('./App');
   render(<App/>);
   expect(await screen.findByRole('img', { name: 'Входит в топ-5' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Мои задачи' }));
   await screen.findByText('Застрял · AVT-555');
   fireEvent.click(screen.getByRole('button', { name: /AVT-555.*Задача/ }));
   expect(await screen.findByText('В работе', { selector: 'li' })).toHaveAttribute('aria-current', 'step');
   fireEvent.click(screen.getByRole('button', { name: 'Наставник' }));
   const scoreboard = within(await screen.findByRole('region', { name: 'Рейтинг стажёров' }));
+  const filter = await screen.findByRole('checkbox', { name: 'Только с флагами' });
+  fireEvent.click(filter);
   expect(scoreboard.getByText('10')).toBeInTheDocument();
+  fireEvent.click(scoreboard.getByRole('button', { name: 'Обновить из Jira' }));
+  expect(await scoreboard.findByRole('alert')).toHaveTextContent('Рейтинг не обновился');
+  expect(scoreboard.getByText('10')).toBeVisible();
   fireEvent.click(scoreboard.getByRole('button', { name: 'Обновить из Jira' }));
   expect(scoreboard.getByRole('button', { name: 'Обновляем…' })).toBeDisabled();
   finishSync(Response.json({ status: 'success', updated: 4 }));
-  expect(await scoreboard.findByText('Обновлено только что')).toBeInTheDocument();
+  expect(await scoreboard.findByText(/Задач обработано при демо-синхронизации: 4/)).toBeInTheDocument();
+  expect(filter).toBeChecked();
   expect(scoreboard.getByText('20')).toBeInTheDocument();
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Среднее время' }));
+  const metrics = await screen.findByRole('button', { name: 'Среднее время' });
+  fireEvent.click(metrics);
+  expect(metrics.closest('tr')?.nextElementSibling).toHaveTextContent('За всё время');
+  expect(screen.getByText('За всё время')).toBeVisible();
   expect(await screen.findByText('+25%')).toHaveClass('deviation-over');
   expect(screen.getByText('-50%')).toHaveClass('deviation-under');
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Только с флагами' }));
+  const stages = screen.getByRole('button', { name: 'Этапы AVT-555' });
+  fireEvent.click(stages);
+  expect(await within(stages.closest('td')!).findByText('В работе')).toHaveAttribute('aria-current', 'step');
   fireEvent.click(screen.getByText('Застрял · AVT-555'));
   expect(screen.getByText(flag.reason)).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Пометить решённым' }));
@@ -196,5 +216,6 @@ it('refreshes the scoreboard, opens stages and metrics, and resolves STUCK local
   expect(screen.getByText('Застрял · AVT-555')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Пометить решённым' }));
   expect(await screen.findByText('Нет стажёров с активными флагами.')).toBeInTheDocument();
+  expect(filter).toHaveFocus();
   expect(request).toHaveBeenCalledWith('/flags/f-001/resolve', expect.objectContaining({ method: 'PATCH' }));
 });

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { ReactNode, RefObject } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import type { ReactNode, RefObject, UIEventHandler } from 'react';
 import { Bell, KeyRound, LoaderCircle } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { finishAction, mockMode, prepareAction } from './api';
@@ -18,9 +18,15 @@ export function ActionButton({ action, initialPendingId }: { action: ButtonActio
   const [error, setError] = useState('');
   const id = useRef<string | null>(null);
   const running = useRef(false);
+  const prepareButton = useRef<HTMLButtonElement>(null);
   const isTicket = action.id === 'create_access_ticket';
+  const system = isTicket && action.data.system.toLowerCase() === 'jira' ? 'Jira' : isTicket ? action.data.system : undefined;
+  useLayoutEffect(() => {
+    if (cancelled) prepareButton.current?.focus();
+  }, [cancelled]);
+
   async function run(operation: 'prepare' | 'confirm' | 'cancel') {
-    if (running.current || sent || cancelled) return;
+    if (running.current || sent) return;
     running.current = true;
     setPending(true);
     setError('');
@@ -30,8 +36,13 @@ export function ActionButton({ action, initialPendingId }: { action: ButtonActio
       } else if (operation === 'prepare') {
         id.current ??= crypto.randomUUID();
         setPendingId(await prepareAction(action, id.current));
+        setCancelled(false);
       } else if (pendingId) {
         setTicket(await finishAction(action, pendingId, operation === 'cancel'));
+        if (operation === 'cancel') {
+          id.current = null;
+          setPendingId(undefined);
+        }
         setCancelled(operation === 'cancel');
         setSent(operation === 'confirm');
       }
@@ -46,12 +57,12 @@ export function ActionButton({ action, initialPendingId }: { action: ButtonActio
       setPending(false);
     }
   }
-  if (ticket) return <div role="status"><TicketCard data={ticket}/></div>;
-  if (cancelled) return <p role="status">Черновик отменён.</p>;
+  if (ticket) return <div role="status"><TicketCard data={ticket} system={system}/></div>;
   if (sent) return <p role="status">{mockMode ? 'Демо · напоминание отмечено как отправленное.' : 'Напоминание отправлено.'}</p>;
   if (pendingId) return <section className="ticket-card">
-    <h3>{isTicket ? `Черновик · доступ к ${action.data.system}` : 'Черновик напоминания'}</h3>
-    <p>{isTicket ? action.data.reason : action.data?.message ?? 'Пожалуйста, проверь мои задачи по онбордингу.'}</p>
+    <h3>{isTicket ? `Черновик · доступ к ${system}` : 'Черновик напоминания'}</h3>
+    <p>{isTicket ? action.data.reason || 'Запрос доступа к рабочему сервису.' : action.data?.message ?? 'Пожалуйста, проверь мои задачи по онбордингу.'}</p>
+    <p className="ticket-note">{isTicket ? 'После подтверждения заявка поступит на обработку. Доступ не выдаётся автоматически.' : 'После подтверждения наставник получит напоминание.'}</p>
     <div className="action-controls">
       <button className="primary-button" disabled={pending} onClick={() => run('confirm')}>Подтвердить</button>
       <button className="secondary-button" disabled={pending} onClick={() => run('cancel')}>Отменить</button>
@@ -60,18 +71,20 @@ export function ActionButton({ action, initialPendingId }: { action: ButtonActio
     {error && <p className="error-note" role="alert">{error}</p>}
   </section>;
   return <div>
-    <button className="secondary-button" disabled={pending} onClick={() => run('prepare')}>
+    {cancelled && <p role="status">Черновик отменён.</p>}
+    <button ref={prepareButton} className="secondary-button" disabled={pending} onClick={() => run('prepare')}>
       {isTicket ? <KeyRound size={15}/> : <Bell size={15}/>}
-      {pending ? 'Готовим черновик…' : isTicket ? `${action.label} · ${action.data.system}` : action.label}
+      {pending ? 'Готовим черновик…' : cancelled ? 'Подготовить новый черновик' : isTicket ? `${action.label} · ${system}` : action.label}
     </button>
     {error && <p className="error-note" role="alert">{error}</p>}
   </div>;
 }
 
-export function TicketCard({ data }: { data: TicketAction['data'] }) {
+export function TicketCard({ data, system }: { data: TicketAction['data']; system?: string }) {
   return <section className="ticket-card">
     <h3><KeyRound size={16}/>Заявка {data.ticket_id}</h3>
-    {data.status && <p>Статус · {data.status === 'pending' ? 'Ожидает согласования' : data.status}</p>}
+    {system && <p>Доступ к {system}</p>}
+    {data.status && <p>Статус · {data.status === 'created' ? 'Заявка создана' : data.status === 'pending' ? 'Ожидает согласования' : data.status}</p>}
     <p>Срок обработки · {data.sla_hours} ч</p>
   </section>;
 }
@@ -83,8 +96,8 @@ export function StreamingMessage({ text }: { text: string }) {
   </>;
 }
 
-export function MessageList({ scrollRef, children }: { scrollRef: RefObject<HTMLDivElement | null>; children: ReactNode }) {
-  return <div className="chat-scroll" ref={scrollRef} role="log" aria-label="Переписка">{children}</div>;
+export function MessageList({ scrollRef, onScroll, children }: { scrollRef: RefObject<HTMLDivElement | null>; onScroll: UIEventHandler<HTMLDivElement>; children: ReactNode }) {
+  return <div className="chat-scroll" ref={scrollRef} onScroll={onScroll} tabIndex={0} role="log" aria-label="Переписка">{children}</div>;
 }
 
 export function ChatMessage({ message, avatar, children }: { message: Message; avatar: ReactNode; children?: ReactNode }) {

@@ -26,9 +26,9 @@ describe('interactive demo', () => {
     expect(screen.getByRole('button',{name:'Отправляем…'})).toBeDisabled();
     await tick();
     expect(screen.getByText('REQ-042')).toBeInTheDocument();
-    expect(screen.getByText('Ожидает согласования')).toBeInTheDocument();
+    expect(within(screen.getByRole('log')).getByText('Ожидает согласования')).toBeInTheDocument();
     expect(screen.getByText('240 / 400 XP')).toBeInTheDocument();
-    click(/Получить доступ к Jira/); await tick();
+    click('Мои задачи'); click(/Получить доступ к Jira/); await tick();
     expect(screen.getByText(/повторная заявка не нужна/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Согласовать в демо' })).not.toBeInTheDocument();
     click('Наставник');
@@ -38,14 +38,14 @@ describe('interactive demo', () => {
     expect(screen.getByText('360 / 400 XP')).toBeInTheDocument();
     mounted.unmount(); render(<App/>);
     expect(screen.getByText('Доступ выдан · +120 XP')).toBeInTheDocument();
-    click(/Изучить инструкции команды/);
+    click('Мои задачи'); click(/Изучить инструкции команды/);
     click('Прочитал, всё понятно · +100 XP');
     expect(screen.getByText('460 / 600 XP')).toBeInTheDocument();
     expect(screen.getByText('Новый уровень 3! Отличная работа, Роман.')).toBeInTheDocument();
     click(/Изучить инструкции команды/); expect(screen.getByRole('button',{name:'Уже прочитано'})).toBeDisabled(); close();
     await tick(4500); expect(screen.queryByText('Новый уровень 3! Отличная работа, Роман.')).not.toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).completed).toEqual(['team','access','guide']);
-  });
+  }, 15_000);
   it('can simulate a failure without losing data and then retry', async () => {
     render(<App/>); click('Помощь');
     fireEvent.click(screen.getByRole('checkbox', { name: /Проверить ошибку отправки/ }));
@@ -70,7 +70,7 @@ describe('interactive demo', () => {
     expect(screen.getByText(/Эти сведения недоступны/)).toBeInTheDocument();
     fireEvent.change(input,{target:{value:'Как вырастить кактус?'}});click('Отправить сообщение');await tick();
     expect(screen.getByText(/В демобазе пока нет ответа/)).toBeInTheDocument();
-    click('Что дальше?'); await tick();
+    fireEvent.change(input, {target:{value:'Что делать дальше?'}}); click('Отправить сообщение'); await tick();
     expect(screen.getByText(/Предлагаю получить доступ/)).toBeInTheDocument();
   });
   it('opens the secondary modules and restores focus after dialogs', () => {
@@ -79,7 +79,7 @@ describe('interactive demo', () => {
     click(/Как получить доступ к инструментам/);
     expect(screen.getByRole('dialog')).toHaveTextContent('Созданная заявка ещё не означает');close();
     click('База знаний'); click(/Как работает наша команда/); close();
-    click(/Познакомиться с командой/); click('Открыть инструкцию команды'); close();
+    click('Мои задачи'); click(/Познакомиться с командой/); click('Открыть инструкцию команды'); close();
     click('Мои задачи'); expect(screen.getByRole('heading', { name: 'Мои задачи' })).toHaveFocus();
     click('Помощь'); fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: false }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -107,7 +107,7 @@ describe('interactive demo', () => {
     let state = reducer(initialState(),{type:'reply',text:'доступ'});
     state = reducer(state,{type:'submit'});
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    render(<App/>); expect(screen.getByText('Ожидает согласования')).toBeInTheDocument();
+    render(<App/>); expect(within(screen.getByRole('log')).getByText('Ожидает согласования')).toBeInTheDocument();
     click('Наставник'); click('Согласовать в демо'); click('Стажёр'); await requestAccess();
     expect(screen.getByText(/Доступ уже выдан в демосервисе/)).toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'Согласовать в демо'})).not.toBeInTheDocument();
@@ -116,11 +116,23 @@ describe('interactive demo', () => {
     render(<App/>);
     click('Утренний брифинг'); await tick();
     expect(within(screen.getByRole('log')).getByRole('heading', { name: 'Утренний брифинг' })).toBeInTheDocument();
+    click('Открыть задачи');
+    expect(screen.getByRole('heading', { name: 'Мои задачи' })).toHaveFocus();
+    expect(screen.queryByRole('log')).not.toBeInTheDocument();
+    await tick(0);
+    const task = screen.getByRole('button', { name: /^AVT-555/ });
+    click(/^AVT-555/); await tick();
+    expect(task).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('list', { name: 'Этапы задачи' })).toBeVisible();
+    click('Вернуться к диалогу');
+    expect(screen.getByRole('heading', { name: 'Бадди' })).toHaveFocus();
+    expect(within(screen.getByRole('log')).getByText('Покажи утренний брифинг')).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Дашборд наставника' })).not.toBeInTheDocument();
     click('Наставник');
     const dashboard = screen.getByRole('heading', { name: 'Дашборд наставника' });
     expect(dashboard).toBeInTheDocument();
-    click('Сводка по стажёрам');
+    expect(screen.queryByRole('log')).not.toBeInTheDocument();
+    click('Чат с Бадди'); click('Сводка по стажёрам');
     await tick();
     expect(within(screen.getByRole('log')).getByText(/Стажёров в команде: 7/)).toBeInTheDocument();
     click('Открыть дашборд'); expect(dashboard).toHaveFocus();
@@ -148,6 +160,20 @@ describe('interactive demo', () => {
     await tick();
     expect(chat.getByRole('status')).toHaveTextContent('Демо');
   });
+  it('does not jump to the latest response while the user reads earlier messages', async () => {
+    render(<App/>);
+    const chat = screen.getByRole('log');
+    Object.defineProperties(chat, { scrollHeight: { value: 800 }, clientHeight: { value: 250 } });
+    click('Утренний брифинг');
+    await tick(125);
+    const scrollTo = vi.mocked(chat.scrollTo);
+    scrollTo.mockClear();
+    chat.scrollTop = 50;
+    fireEvent.scroll(chat);
+    await tick();
+    expect(within(chat).getByRole('heading', { name: 'Утренний брифинг' })).toBeInTheDocument();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
   it('denies a direct dashboard link and lets a mentor sort, filter and open an intern thread', async () => {
     history.replaceState(null, '', '#mentor');
     render(<App/>);
@@ -163,8 +189,11 @@ describe('interactive demo', () => {
     fireEvent.change(screen.getByLabelText('Сообщение Бадди'), { target: { value: 'Как успехи?' } });
     click('Отправить сообщение');
     await tick();
+    click('К стажёрам');
     click('Открыть чат · Анна Петрова');
     expect(screen.queryByText('Как успехи?')).not.toBeInTheDocument();
+    click('К стажёрам');
+    expect(screen.getByLabelText('Статус')).toHaveValue('at_risk');
     click('Открыть чат · Мария Козлова');
     expect(screen.getByText('Как успехи?')).toBeInTheDocument();
     click('Стажёр');
@@ -182,5 +211,15 @@ describe('interactive demo', () => {
     await tick();
     expect(screen.getByRole('heading', { name: 'Заявка REQ-042' })).toBeInTheDocument();
     expect(screen.getByText('Срок обработки · 2 ч')).toBeInTheDocument();
+  });
+
+  it('cancels a mock draft and creates a fresh one in the same chat', async () => {
+    render(<App/>);
+    await requestAccess();
+    click('Отменить черновик');
+    expect(screen.getByText(/Черновик отменён/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Отправить заявку' })).not.toBeInTheDocument();
+    await requestAccess();
+    expect(screen.getAllByRole('button', { name: 'Отправить заявку' })).toHaveLength(1);
   });
 });

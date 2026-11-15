@@ -62,6 +62,7 @@ export type Action =
   | { type: 'answer'; message: Omit<Message, 'id' | 'role'> }
   | { type: 'edit'; reason: string; resource: string }
   | { type: 'submit'; fail?: boolean }
+  | { type: 'cancel' }
   | { type: 'approve' }
   | { type: 'read' }
   | { type: 'reset' };
@@ -96,6 +97,9 @@ export function reducer(state: DemoState, action: Action): DemoState {
     }
     case 'edit': return state.ticket?.status === 'draft' && action.reason.trim().length >= 5 && action.reason.trim().length <= 240 && action.resource === state.ticket.resource
       ? { ...state, ticket: { ...state.ticket, resource: action.resource, reason: action.reason.trim() } } : state;
+    case 'cancel': return state.ticket?.status === 'draft'
+      ? buddy({ ...state, ticket: null, messages: state.messages.map(message => message.kind === 'request' ? { ...message, kind: undefined } : message) }, 'Черновик отменён. Можешь запросить доступ снова.')
+      : state;
     case 'submit': {
       if (state.ticket?.status !== 'draft') return state;
       if (action.fail) return buddy(state, 'Демосервис временно недоступен. Заявка не отправлена, данные сохранены. Нажми «Отправить заявку» ещё раз.');
@@ -103,7 +107,7 @@ export function reducer(state: DemoState, action: Action): DemoState {
         role: 'buddy',
         text: 'Заявка создана. Пока доступ согласовывают, можно изучить инструкцию команды.',
         source: 'team',
-        actions: [{ type: 'card', kind: 'ticket', data: { ticket_id: state.ticket.id, status: 'Создана', sla_hours: 2 } }],
+        actions: [{ type: 'card', kind: 'ticket', data: { ticket_id: state.ticket.id, status: 'created', sla_hours: 2 } }],
       });
     }
     case 'approve': {
