@@ -19,6 +19,8 @@ def test_get_settings_reads_environment_values(monkeypatch, tmp_path):
         "BACKEND_BASE_URL": "http://backend.test",
         "INTERNAL_TOKEN": "shared-secret",
         "REQUEST_CONTEXT_SECRET": "request-secret",
+        "MOCK_AI_METRICS_PATH": str(tmp_path / "metrics.json"),
+        "MOCK_AI_STUCK_PATH": str(tmp_path / "stuck.json"),
         "APP_TIMEZONE": "UTC",
         "SYSTEM_PROMPT_PATH": str(tmp_path / "prompt.txt"),
         "TOOLS_SCHEMA_PATH": str(tmp_path / "tools.json"),
@@ -36,6 +38,8 @@ def test_get_settings_reads_environment_values(monkeypatch, tmp_path):
     assert settings.backend_base_url == values["BACKEND_BASE_URL"]
     assert settings.internal_token == values["INTERNAL_TOKEN"]
     assert settings.request_context_secret == values["REQUEST_CONTEXT_SECRET"]
+    assert str(settings.mock_ai_metrics_path) == values["MOCK_AI_METRICS_PATH"]
+    assert str(settings.mock_ai_stuck_path) == values["MOCK_AI_STUCK_PATH"]
     assert settings.app_timezone == "UTC"
     assert str(settings.system_prompt_path) == values["SYSTEM_PROMPT_PATH"]
     assert str(settings.tools_schema_path) == values["TOOLS_SCHEMA_PATH"]
