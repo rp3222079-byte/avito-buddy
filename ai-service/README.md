@@ -49,6 +49,14 @@ Ollama remains on the host and is reached from containers through
 
 Open `http://127.0.0.1:8000/docs` for the interactive API docs.
 
+## AI analytics MVP stubs
+
+`POST /ai/metrics` returns `data/mock_ai_metrics_response.json`;
+`POST /ai/stuck` validates the documented task, transition, and baseline
+payload, then returns `data/mock_ai_stuck_response.json`. Both endpoints are
+internal and require the shared token plus a mentor identity. The responses are
+fixtures: metric calculations and stuck detection are deferred.
+
 ## Run tests
 
 From the repository root, install the application and test dependencies, then

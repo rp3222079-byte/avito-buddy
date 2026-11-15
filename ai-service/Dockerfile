@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ai-service/app ./app
 COPY ai-service/system_prompt.txt ./system_prompt.txt
 COPY ai-service/tools_schema.json ./tools_schema.json
+COPY data/mock_ai_metrics_response.json data/mock_ai_stuck_response.json /data/
 
 EXPOSE 8000
 

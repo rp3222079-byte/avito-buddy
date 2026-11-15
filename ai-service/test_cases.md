@@ -6,6 +6,8 @@
 `get_checklist`, `create_access_ticket`, `notify_mentor` и `get_mentor_interns`.
 Cron и `generate_morning_briefing()` пока не подключены.
 Для RAG-поиска и задач должны быть запущены сервисы по адресам из `.env`.
+В MVP также доступны внутренние заглушки `POST /ai/metrics` и
+`POST /ai/stuck`: они возвращают mock-файлы; расчёты метрик и STUCK не выполняются.
 
 ## Тест 1: RAG (Вопрос по базе знаний)
 **Запрос:** вопрос о правиле или процессе, который есть в базе знаний.
