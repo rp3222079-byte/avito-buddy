@@ -248,17 +248,22 @@ class AgentService:
                 stream=True,
             )
             text_parts: list[str] = []
-            calls: dict[int, dict[str, Any]] = {}
+            calls: list[dict[str, Any]] = []
+            active_calls: dict[int, dict[str, Any]] = {}
             async for chunk in stream:
+                if not chunk.choices:
+                    continue
                 delta = chunk.choices[0].delta
                 if delta.content:
                     text_parts.append(delta.content)
                     yield {"event": "token", "text": delta.content}
                 for call_delta in delta.tool_calls or []:
-                    call = calls.setdefault(
-                        call_delta.index,
-                        {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
-                    )
+                    call = active_calls.get(call_delta.index)
+                    # A gateway may reuse a stream index for a different tool-call ID.
+                    if call is None or (call["id"] and call_delta.id and call["id"] != call_delta.id):
+                        call = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                        active_calls[call_delta.index] = call
+                        calls.append(call)
                     if call_delta.id:
                         call["id"] = call_delta.id
                     if call_delta.function:
@@ -278,7 +283,7 @@ class AgentService:
 
             # Rebuild call objects in the SDK-independent shape expected below.
             call_messages = []
-            for call in calls.values():
+            for call in calls:
                 call_messages.append(_ToolCallView(call))
             messages, new_sources, new_tools, new_actions = await self._run_tool_calls(
                 messages,

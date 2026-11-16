@@ -88,3 +88,28 @@ async def test_app_lifespan_initializes_and_closes_clients(monkeypatch, tmp_path
 
     llm_client.close.assert_awaited_once()
     http_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.parametrize("url", ["", "http://host.docker.internal:11434/v1/"])
+def test_ollama_keeps_local_defaults(monkeypatch, url):
+    monkeypatch.setenv("LLM_BASE_URL", url)
+    monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("LLM_MODEL", "")
+
+    settings = config_module.get_settings.__wrapped__()
+
+    assert settings.llm_api_key == "ollama"
+    assert settings.llm_model == "qwen3:8b"
+
+
+@pytest.mark.parametrize(
+    ("key", "model"),
+    [("", "gpt-4.1-mini"), ("ollama", "gpt-4.1-mini"), ("test-key", "")],
+)
+def test_remote_llm_requires_explicit_key_and_model(monkeypatch, key, model):
+    monkeypatch.setenv("LLM_BASE_URL", "https://openai.bothub.chat/v1")
+    monkeypatch.setenv("LLM_API_KEY", key)
+    monkeypatch.setenv("LLM_MODEL", model)
+
+    with pytest.raises(ValueError, match="Set LLM_API_KEY and LLM_MODEL"):
+        config_module.get_settings.__wrapped__()

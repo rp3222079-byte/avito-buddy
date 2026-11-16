@@ -1,7 +1,7 @@
 # AI-buddy AI-service
 
-FastAPI AI-service for the project. It connects to an OpenAI-compatible chat API
-(local Ollama by default), loads the system prompt and tool schemas, and runs
+FastAPI AI-service for the project. It connects to a configurable OpenAI-compatible
+Chat Completions API, loads the system prompt and tool schemas, and runs
 knowledge search, checklist retrieval, intern tasks, access tickets, mentor
 notifications, and mentor intern lookup through RAG and Go Backend. Conversation
 storage and the morning scheduler are not connected yet.
@@ -23,15 +23,36 @@ tools_schema.json   Tool definitions exposed to the model
 test_cases.md       Existing behavioral examples
 ```
 
-Next modules: a persistence adapter for bounded conversation history and a
-scheduler for `generate_morning_briefing()`. The Go Backend source is maintained
-separately; its current chat proxy forwards session context to this service. The
-frontend in this folder still uses local demo behavior.
+The Go backend forwards session context to this service. The frontend can use
+the Go proxy in real mode or run on demo data in mock mode.
 
-## Run locally with Ollama
+## Configure the model
 
-Ollama must be running with the configured model available (default: `qwen3:8b`).
-From the repository root:
+In Docker Compose, use the repository's root `.env`. For a standalone AI
+process, use `ai-service/.env`. Set `LLM_BASE_URL` to the provider's API base
+URL, `LLM_API_KEY` to the provider credential, and `LLM_MODEL` to the model ID.
+The model and gateway need to support Chat Completions with streaming and
+function calling. The SDK appends `/chat/completions` to the base URL.
+
+BotHub example:
+
+```dotenv
+LLM_BASE_URL=https://openai.bothub.chat/v1
+LLM_API_KEY=
+LLM_MODEL=gemini-2.5-flash-lite
+```
+
+Supply the API key through a local env file or the process environment. The
+service requires an explicit key and model for remote URLs. To use a private
+compatible endpoint that accepts requests without authentication, set a
+non-empty placeholder key. See the [BotHub API docs](https://bothub.chat/api/documentation/ru)
+and the [full-stack setup](../README.md#запуск-с-go-api-и-llm).
+
+## Run the AI service outside Docker
+
+For local Ollama, start it and run `ollama pull qwen3:8b`. The local Ollama
+URL uses that model by default. From the repository root, copy the example
+and update it if you use a different provider.
 
 ```sh
 cp ai-service/.env.example ai-service/.env
@@ -44,8 +65,7 @@ Start the Backend and RAG dependencies in another terminal with
 AI process reads `BACKEND_BASE_URL`, `RAG_BASE_URL`, and `INTERNAL_TOKEN` from
 `ai-service/.env`; keep the token identical in the Compose environment. For a
 single-command stack, use `docker compose up --build` from the repository root.
-Ollama remains on the host and is reached from containers through
-`host.docker.internal`.
+With the local Ollama option, containers reach it through `host.docker.internal`.
 
 Open `http://127.0.0.1:8000/docs` for the interactive API docs.
 
