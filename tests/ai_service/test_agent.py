@@ -155,6 +155,7 @@ async def test_agent_stops_after_four_tool_rounds(prompt_file):
 async def test_stream_reply_emits_tokens_and_done(prompt_file):
     async def chunks():
         yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="Ответ ", tool_calls=[]))])
+        yield SimpleNamespace(choices=[])
         yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="потоком", tool_calls=[]))])
 
     llm = AsyncMock()
@@ -211,6 +212,29 @@ async def test_stream_reply_executes_streamed_tool_call(prompt_file):
         {"event": "token", "text": "Нашёл инструкцию."},
         {"event": "done", "sources": [{"source": "guide.md"}], "tools_used": ["search_knowledge_base"], "actions": []},
     ]
+
+
+@pytest.mark.asyncio
+async def test_stream_reply_keeps_distinct_tool_ids_when_index_is_reused(prompt_file):
+    async def tool_chunks():
+        for name in ("get_jira_tasks", "get_checklist"):
+            call = tool_call(name=name, arguments="{}", call_id=name)
+            call.index = 0
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=message(tool_calls=[call]))])
+
+    async def answer_chunks():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=message("Готово."))])
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = [tool_chunks(), answer_chunks()]
+    executor = FakeToolExecutor()
+    agent = AgentService(llm, "test-model", prompt_file, "Asia/Novosibirsk", executor)
+
+    events = [event async for event in agent.stream_reply("Брифинг", "intern", "intern-7")]
+
+    assert events[-1]["tools_used"] == ["get_jira_tasks", "get_checklist"]
+    tool_messages = llm.chat.completions.create.call_args.kwargs["messages"][-2:]
+    assert [entry["tool_call_id"] for entry in tool_messages] == ["get_jira_tasks", "get_checklist"]
 
 
 @pytest.mark.asyncio
